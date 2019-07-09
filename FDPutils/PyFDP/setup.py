@@ -125,6 +125,6 @@ setuptools.setup(
     # We have two dlls to package with the python lib.
     include_package_data=True,
     package_data={
-        "PyFDP": ["*.dll"],
+        "PyFDP": ["*.dll", "*.dylib"],
     }
 )
