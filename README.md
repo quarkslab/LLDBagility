@@ -78,7 +78,8 @@ optional arguments:
 - Do not connect multiple instances of LLDBagility to the same macOS VM at the same time
 - If the macOS VM reboots (for any reason), redo `fdp-attach` (the kernel slide changes and LLDB is not aware of this)
 - If debugging seems slow or intermittent, disable App Nap in the macOS host
-- Pause the kernel execution before setting breakpoints or LLDB will complain
+- Pause the kernel execution before setting software breakpoints or LLDB will complain
+- Pause the kernel execution before setting hardware breakpoints with `fdp-hbreakpoint` or LLDB will return `Invalid expression`
 - Preferably load lldbmacros after attaching, otherwise the error `FATAL FAILURE: Unable to find kdp_thread state for this connection.` is raised (and some macros breaks)
 - LLBDagility should work out of the box from XNU 4903.251.3 (the latest at the time of writing) to XNU 1486.2.11; before that, minor adjustments are required in `STUBVM.read_virtual_memory()` so that the fake `kdp` struct matches the one used by the kernel
 
