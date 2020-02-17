@@ -26,20 +26,20 @@ class VMSN(str):
         Cpuid = struct.unpack("B", self.vmsn_fd.read(1))
         Null = self.vmsn_fd.read(3)
         if Name != "rip":
-            print "Name %s" % list(Name)
-            print "Failed !"
+            print("Name %s" % list(Name))
+            print("Failed !")
             return False
 
         self.rip = struct.unpack("Q", self.vmsn_fd.read(8))[0]
-        print "rip 0x%x" % (self.rip)
+        print("rip 0x%x" % (self.rip))
 
         self.vmsn_fd.seek(CPU_INFO_INDEX[0]+CPU_INFO_INDEX[1], 0)
         Name = self.vmsn_fd.read(6)
         Cpuid = struct.unpack("B", self.vmsn_fd.read(1))
         Null = self.vmsn_fd.read(5)
         if Name != "gpregs":
-            print "Name gpregs %s" % list(Name)
-            print "Failed !"
+            print("Name gpregs %s" % list(Name))
+            print("Failed !")
             return False
 
         self.rax = struct.unpack("Q", self.vmsn_fd.read(8))[0]
@@ -67,8 +67,8 @@ class VMSN(str):
         Cpuid = struct.unpack("B", self.vmsn_fd.read(1))
         Null = self.vmsn_fd.read(5)
         if Name != "CR64":
-            print "Name %s" % list(Name)
-            print "Failed !"
+            print("Name %s" % list(Name))
+            print("Failed !")
             return False
 
         struct.unpack("Q", self.vmsn_fd.read(8))[0]
@@ -113,7 +113,7 @@ class VMSN(str):
             return None;
         tmp = self.ReadPhysical64(PDPE_base + (PDPE_index * 8));
         if (tmp & 0x80): # This pas is a huge one (1G) !
-            print "TODO !!  HUGE !!!";
+            print("TODO !!  HUGE !!!")
             return None;
         PDE_base = tmp & 0x0000FFFFFFFFF000;
         if ((PDE_base == 0) or (PDE_base > (self.mem_size - _4K))):
@@ -191,38 +191,38 @@ def dump(f):
     for i in range(0, 5):
         for j in range(0, 16):
             Unk3 = struct.unpack("B", f.read(1))[0]
-            print "%02x " % Unk3,
-        print ""
+            print("%02x " % Unk3,)
+        print("")
 
 f = open(VMSN_FILENAME)
 
 Magic = struct.unpack("I", f.read(4))[0]
-print "Magic %x" % Magic
+print("Magic %x" % Magic)
 Unk = struct.unpack("I", f.read(4))[0]
-print "Unk %d" % Unk
+print("Unk %d" % Unk)
 GroupCount = struct.unpack("I", f.read(4))[0]
-print "GroupCount %d" % GroupCount
+print("GroupCount %d" % GroupCount)
 
 for i in range(0, GroupCount):
     Name = nullstrip(f.read(64))
-    print "Name %s" % Name
+    print("Name %s" % Name)
     TagOffset = struct.unpack("Q", f.read(8))[0]
-    print "TagOffset %d" % (TagOffset)
+    print("TagOffset %d" % (TagOffset))
     Unk2 = struct.unpack("Q", f.read(8))[0]
-    print "Unk2 %d" % Unk2
+    print("Unk2 %d" % Unk2)
 
     if "cpu" == Name:
         f.seek(TagOffset, 0)
         for j in range(0, 4):
-            print "---------------TAG-----------------"
+            print("---------------TAG-----------------")
             TagFlags = struct.unpack("B", f.read(1))[0]
-            print "TagFlags %d" % TagFlags
+            print("TagFlags %d" % TagFlags)
             TagDataSize = TagFlags & 0x3F
-            print "TagDataSize %d" % TagDataSize
+            print("TagDataSize %d" % TagDataSize)
             TagNameSize = struct.unpack("B", f.read(1))[0]
-            print "TagNameSize %d" % TagNameSize
+            print("TagNameSize %d" % TagNameSize)
             TagName = f.read(TagNameSize)
-            print "TagName %s" % TagName
+            print("TagName %s" % TagName)
             TagData = f.read(TagDataSize)
             #f.read(4)
         break
@@ -236,18 +236,18 @@ Name = nullstrip(f.read(3))
 Cpuid = struct.unpack("B", f.read(1))
 Null = f.read(3)
 if Name != "rip":
-    print "Name %s" % list(Name)
-    print "Failed !"
+    print("Name %s" % list(Name))
+    print("Failed !")
     sys.exit(0)
 rip = struct.unpack("Q", f.read(8))[0]
-print "rip 0x%x" % (rip)
+print("rip 0x%x" % (rip))
 
 f.seek(28, 1)
 Name = nullstrip(f.read(6))
 Cpuid = struct.unpack("B", f.read(1))
 Null = f.read(5)
 if Name != "gpregs":
-    print "Failed !"
+    print("Failed !")
     sys.exit(0)
 
 #6 rsp
@@ -275,7 +275,7 @@ register_names = [  "rax",
                     "gs",
                 ]
 for i in range(0, 20):
-    print "%s 0x%x" % (register_names[i], struct.unpack("Q", f.read(8))[0])
+    print("%s 0x%x" % (register_names[i], struct.unpack("Q", f.read(8))[0]))
 
 f.seek(908, 1)
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 import re
+import sys
 import threading
 
 import lldbagilityutils
@@ -160,7 +161,11 @@ class STUBVM(object):
         if b"stext" not in kernel_version:
             logger.debug(">  stext")
             # return the known kernel load address to make LLDB do less requests
-            kernel_version += "; stext=0x{:016x}".format(self.kernel_load_vaddr)
+            known_kernel_load_addr_str = "; stext=0x{:016x}".format(self.kernel_load_vaddr)
+            if sys.version_info >= (3,0):
+                kernel_version += known_kernel_load_addr_str.encode()
+            else:
+                kernel_version += known_kernel_load_addr_str
         return kernel_version
 
     @lldbagilityutils.indented(logger)
