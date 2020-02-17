@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 from . import kdputils
+import sys
 
 logger = kdputils.create_logger(__name__, "/tmp/kdputils.log")
 
@@ -269,7 +270,9 @@ def _repr(k, v):
         return KDPRequest.names[v]
     elif k == "error":
         return KDPError.names[v]
-    elif isinstance(v, (int, long)):
+    elif sys.version_info < (3,0) and isinstance(v, (int, long)):
+        return "0x{:x}".format(v)
+    elif sys.version_info >= (3,0) and isinstance(v, int):
         return "0x{:x}".format(v)
     return repr(v)
 
