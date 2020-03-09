@@ -1,11 +1,8 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 import ctypes
 import struct
 
-
-def p64(i):
-    return struct.pack("<Q", i)
+p64 = lambda i: struct.pack("<Q", i)
 
 
 # https://bitbucket.org/ronaldoussoren/macholib/src/e287095a0b4a02dccb7537c9d1de904dc0f45cc2/macholib/mach_o.py

@@ -19,9 +19,10 @@ DWARFUTILS_SRCDIRECTORY=$(../DWARFutils/parse-dwarf-types-to-c-source.py "$KDKUT
 # compile the extracted structures/variables into a new DWARF file
 cd "$DWARFUTILS_SRCDIRECTORY" >/dev/null
     command -v clang-format >/dev/null && clang-format -i -style="{AlignConsecutiveDeclarations: true}" *.c
-    clang -g -x c -shared *.c
+    clang -g -x c -shared -Wno-visibility *.c
     mkdir -p "$(dirname "$KDKUTILS_GENERATED_KERNEL")"
     cp "a.out.dSYM/Contents/Resources/DWARF/a.out" "$KDKUTILS_GENERATED_KERNEL"
     rm -r "a.out" "a.out.dSYM"
     file "$KDKUTILS_GENERATED_KERNEL"
 cd - >/dev/null
+echo "DWARFUTILS_SRCDIRECTORY=\"$DWARFUTILS_SRCDIRECTORY\""

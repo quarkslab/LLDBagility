@@ -1,5 +1,4 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 import argparse
 import ctypes
 
@@ -26,7 +25,7 @@ def _find_segments_offsets(macho, segname):
                 + ctypes.sizeof(kdkutils.section_64) * segment.nsects
             )
 
-            if segment.segname == segname:
+            if segment.segname.decode("ascii") == segname:
                 o = offset - ctypes.sizeof(kdkutils.segment_command_64) + 16
                 return o
 
@@ -48,12 +47,7 @@ def set_segments_vmaddr_and_vmsize(machofilepath, vals):
     for segname in ("__TEXT", "__DATA", "__LINKEDIT"):
         segoffset = _find_segments_offsets(macho, segname)
         vmaddr, vmsize = vals[segname]
-        macho = (
-            macho[:segoffset]
-            + kdkutils.p64(vmaddr)
-            + kdkutils.p64(vmsize)
-            + macho[segoffset + 16 :]
-        )
+        macho = macho[:segoffset] + kdkutils.p64(vmaddr) + kdkutils.p64(vmsize) + macho[segoffset + 16 :]
 
     with open(machofilepath, "wb") as f:
         f.write(macho)
@@ -68,8 +62,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     vals = {
-        "__TEXT": map(lambda n: int(n, 0), args.text.split(",")),
-        "__DATA": map(lambda n: int(n, 0), args.data.split(",")),
-        "__LINKEDIT": map(lambda n: int(n, 0), args.linkedit.split(",")),
+        "__TEXT": [int(n, 0) for n in args.text.split(",")],
+        "__DATA": [int(n, 0) for n in args.data.split(",")],
+        "__LINKEDIT": [int(n, 0) for n in args.linkedit.split(",")],
     }
     set_segments_vmaddr_and_vmsize(args.machofile.name, vals)
