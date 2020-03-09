@@ -68,65 +68,50 @@ HEADER_FIELDS = (
     ("key", kdputils.BEUInt32),
 )
 
-request = 0
-reply = 1
+_request = 0
+_reply = 1
 BODY_FIELDS = {
-    (request, KDPRequest.KDP_CONNECT): [
+    (_request, KDPRequest.KDP_CONNECT): [
         ("req_reply_port", kdputils.BEUInt16),
         ("exc_note_port", kdputils.BEUInt16),
         ("greeting", kdputils.CStr),
     ],
-    (reply, KDPRequest.KDP_CONNECT): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_DISCONNECT): [],
-    (reply, KDPRequest.KDP_DISCONNECT): [],
-    (request, KDPRequest.KDP_REATTACH): [("req_reply_port", kdputils.BEUInt16)],
-    (reply, KDPRequest.KDP_REATTACH): [],
-    (request, KDPRequest.KDP_HOSTINFO): [],
-    (reply, KDPRequest.KDP_HOSTINFO): [
+    (_reply, KDPRequest.KDP_CONNECT): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_DISCONNECT): [],
+    (_reply, KDPRequest.KDP_DISCONNECT): [],
+    (_request, KDPRequest.KDP_REATTACH): [("req_reply_port", kdputils.BEUInt16)],
+    (_reply, KDPRequest.KDP_REATTACH): [],
+    (_request, KDPRequest.KDP_HOSTINFO): [],
+    (_reply, KDPRequest.KDP_HOSTINFO): [
         ("cpus_mask", kdputils.LEUInt32),
         ("cpu_type", kdputils.LEUInt32),
         ("cpu_subtype", kdputils.LEUInt32),
     ],
-    (request, KDPRequest.KDP_VERSION): [],
-    (reply, KDPRequest.KDP_VERSION): [
+    (_request, KDPRequest.KDP_VERSION): [],
+    (_reply, KDPRequest.KDP_VERSION): [
         ("version", kdputils.LEUInt32),
         ("feature", kdputils.LEUInt32),
         ("pad0", kdputils.LEUInt32),
         ("pad1", kdputils.LEUInt32),
     ],
-    (request, KDPRequest.KDP_READMEM64): [
-        ("address", kdputils.LEUInt64),
-        ("nbytes", kdputils.LEUInt32),
-    ],
-    (reply, KDPRequest.KDP_READMEM64): [
-        ("error", kdputils.LEUInt32),
-        ("data", kdputils.Str),
-    ],
-    (request, KDPRequest.KDP_WRITEMEM64): [
+    (_request, KDPRequest.KDP_READMEM64): [("address", kdputils.LEUInt64), ("nbytes", kdputils.LEUInt32)],
+    (_reply, KDPRequest.KDP_READMEM64): [("error", kdputils.LEUInt32), ("data", kdputils.Str)],
+    (_request, KDPRequest.KDP_WRITEMEM64): [
         ("address", kdputils.LEUInt64),
         ("nbytes", kdputils.LEUInt32),
         ("data", kdputils.Str),
     ],
-    (reply, KDPRequest.KDP_WRITEMEM64): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_READMSR64): [
-        ("address", kdputils.LEUInt32),
-        ("lcpu", kdputils.LEUInt16),
-    ],
-    (reply, KDPRequest.KDP_READMSR64): [
-        ("error", kdputils.LEUInt32),
-        ("data", kdputils.CStr),
-    ],
-    (request, KDPRequest.KDP_WRITEMSR64): [
+    (_reply, KDPRequest.KDP_WRITEMEM64): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_READMSR64): [("address", kdputils.LEUInt32), ("lcpu", kdputils.LEUInt16)],
+    (_reply, KDPRequest.KDP_READMSR64): [("error", kdputils.LEUInt32), ("data", kdputils.CStr)],
+    (_request, KDPRequest.KDP_WRITEMSR64): [
         ("address", kdputils.LEUInt32),
         ("lcpu", kdputils.LEUInt16),
         ("data", kdputils.CStr),
     ],
-    (reply, KDPRequest.KDP_WRITEMSR64): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_READREGS): [
-        ("cpu", kdputils.LEUInt32),
-        ("flavor", kdputils.LEUInt32),
-    ],
-    (reply, KDPRequest.KDP_READREGS): [
+    (_reply, KDPRequest.KDP_WRITEMSR64): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_READREGS): [("cpu", kdputils.LEUInt32), ("flavor", kdputils.LEUInt32)],
+    (_reply, KDPRequest.KDP_READREGS): [
         ("error", kdputils.LEUInt32),
         ("rax", kdputils.LEUInt64),
         ("rbx", kdputils.LEUInt64),
@@ -150,7 +135,7 @@ BODY_FIELDS = {
         ("fs", kdputils.LEUInt64),
         ("gs", kdputils.LEUInt64),
     ],
-    (request, KDPRequest.KDP_WRITEREGS): [
+    (_request, KDPRequest.KDP_WRITEREGS): [
         ("cpu", kdputils.LEUInt32),
         ("flavor", kdputils.LEUInt32),
         ("rax", kdputils.LEUInt64),
@@ -175,35 +160,32 @@ BODY_FIELDS = {
         ("fs", kdputils.LEUInt64),
         ("gs", kdputils.LEUInt64),
     ],
-    (reply, KDPRequest.KDP_WRITEREGS): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_RESUMECPUS): [("cpu_mask", kdputils.LEUInt32)],
-    (reply, KDPRequest.KDP_RESUMECPUS): [],
-    (request, KDPRequest.KDP_BREAKPOINT64_SET): [("address", kdputils.LEUInt64)],
-    (reply, KDPRequest.KDP_BREAKPOINT64_SET): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_BREAKPOINT64_REMOVE): [("address", kdputils.LEUInt64)],
-    (reply, KDPRequest.KDP_BREAKPOINT64_REMOVE): [("error", kdputils.LEUInt32)],
-    (request, KDPRequest.KDP_EXCEPTION): [
+    (_reply, KDPRequest.KDP_WRITEREGS): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_RESUMECPUS): [("cpu_mask", kdputils.LEUInt32)],
+    (_reply, KDPRequest.KDP_RESUMECPUS): [],
+    (_request, KDPRequest.KDP_BREAKPOINT64_SET): [("address", kdputils.LEUInt64)],
+    (_reply, KDPRequest.KDP_BREAKPOINT64_SET): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_BREAKPOINT64_REMOVE): [("address", kdputils.LEUInt64)],
+    (_reply, KDPRequest.KDP_BREAKPOINT64_REMOVE): [("error", kdputils.LEUInt32)],
+    (_request, KDPRequest.KDP_EXCEPTION): [
         ("n_exc_info", kdputils.LEUInt32),
         ("cpu", kdputils.LEUInt32),
         ("exception", kdputils.LEUInt32),
         ("code", kdputils.LEUInt32),
         ("subcode", kdputils.LEUInt32),
     ],
-    (reply, KDPRequest.KDP_EXCEPTION): [],
-    (request, KDPRequest.KDP_KERNELVERSION): [],
-    (reply, KDPRequest.KDP_KERNELVERSION): [("version", kdputils.CStr)],
+    (_reply, KDPRequest.KDP_EXCEPTION): [],
+    (_request, KDPRequest.KDP_KERNELVERSION): [],
+    (_reply, KDPRequest.KDP_KERNELVERSION): [("version", kdputils.CStr)],
 }
 
 
-def pack(pkt):
+def _pack(pkt):
     pkt["type"] = pkt["is_reply"] << 7 | pkt["request"] & 0b01111111
     data = bytes(
         b"".join(
             ttype.pack(pkt[name])
-            for fields in (
-                HEADER_FIELDS,
-                BODY_FIELDS[(pkt["is_reply"], pkt["request"])],
-            )
+            for fields in (HEADER_FIELDS, BODY_FIELDS[(pkt["is_reply"], pkt["request"])])
             for name, ttype in fields
         )
     )
@@ -211,7 +193,7 @@ def pack(pkt):
     return data
 
 
-def unpack(data):
+def _unpack(data):
     pkt = dict()
     offset = 0
     for name, ttype in HEADER_FIELDS:
@@ -226,7 +208,7 @@ def unpack(data):
     return pkt
 
 
-def calcsize(pkt):
+def _calcsize(pkt):
     pkt["type"] = pkt["is_reply"] << 7 | pkt["request"] & 0b01111111
     size = sum(
         ttype.calcsize(pkt[name])
@@ -239,28 +221,22 @@ def calcsize(pkt):
 
 def send(from_sock, to_addr, sendpkt, seq, key):
     sendpkt["seq"] = seq
-    sendpkt["len"] = calcsize(sendpkt)
+    sendpkt["len"] = _calcsize(sendpkt)
     sendpkt["key"] = key
     logger.debug("--> {}".format(_summary(sendpkt)))
-    return from_sock.sendto(pack(sendpkt), to_addr)
+    return from_sock.sendto(_pack(sendpkt), to_addr)
 
 
 def recv(from_sock):
     data, addr = from_sock.recvfrom(MAX_KDP_PKT_SIZE)
-    recvpkt = unpack(data)
+    recvpkt = _unpack(data)
     logger.debug("<-- {}".format(_summary(recvpkt)))
     return recvpkt, addr
 
 
-KDPRequest.names = {
-    getattr(KDPRequest, name): name
-    for name in dir(KDPRequest)
-    if name.startswith("KDP_")
-}
+KDPRequest.names = {getattr(KDPRequest, name): name for name in dir(KDPRequest) if name.startswith("KDP_")}
 
-KDPError.names = {
-    getattr(KDPError, name): name for name in dir(KDPError) if name.startswith("KDPERR")
-}
+KDPError.names = {getattr(KDPError, name): name for name in dir(KDPError) if name.startswith("KDPERR")}
 
 
 def _repr(k, v):
@@ -276,9 +252,7 @@ def _repr(k, v):
 def _summary(pkt):
     return "{} {{{}}}".format(
         KDPRequest.names[pkt["request"]],
-        ", ".join(
-            "'{}': {}".format(k, _repr(k, v)) for k, v in pkt.items() if k != "request"
-        ),
+        ", ".join("'{}': {}".format(k, _repr(k, v)) for k, v in pkt.items() if k != "request"),
     )
 
 
@@ -292,7 +266,7 @@ if __name__ == "__main__":
             pkt1["seq"] = 1
             pkt1["len"] = 2
             pkt1["key"] = 3
-            pkt2 = unpack(pack(pkt1))
+            pkt2 = _unpack(_pack(pkt1))
             self.assertTrue(all(pkt1[k] == pkt2[k] for k in pkt1))
 
     unittest.main()

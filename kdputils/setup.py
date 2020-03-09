@@ -1,3 +1,8 @@
-from setuptools import find_packages, setup
+import setuptools
 
-setup(name="kdputils", version="0.1", packages=["kdputils"])
+setuptools.setup(
+    name="kdputils",
+    version="20.0",
+    packages=setuptools.find_packages(),
+    url="https://github.com/quarkslab/LLDBagility",
+)

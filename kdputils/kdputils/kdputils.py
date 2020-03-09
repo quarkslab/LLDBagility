@@ -13,7 +13,7 @@ class Int:
 
     @classmethod
     def unpack(cls, data):
-        value, = struct.unpack_from(cls.fmt, data)
+        (value,) = struct.unpack_from(cls.fmt, data)
         return value, struct.calcsize(cls.fmt)
 
     @classmethod
@@ -84,9 +84,7 @@ class CStr:
 
 def create_logger(name, filename):
     filehandler = logging.FileHandler(filename, mode="w")
-    filehandler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    )
+    filehandler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     logger = logging.getLogger(name)
     logger.propagate = False
     logger.addHandler(filehandler)
