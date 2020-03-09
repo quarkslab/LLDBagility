@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import argparse
 import collections
 import dataclasses
@@ -47,9 +47,7 @@ class DIEBase(DIE):
 
 def parse_base_type(txt):
     off = dwarfutils.extract_offset(txt)
-    DIEs[off] = DIEBase(
-        name=dwarfutils.extract_name(txt), byte_size=dwarfutils.extract_byte_size(txt)
-    )
+    DIEs[off] = DIEBase(name=dwarfutils.extract_name(txt), byte_size=dwarfutils.extract_byte_size(txt))
 
 
 @dataclasses.dataclass
@@ -101,16 +99,13 @@ def parse_enumeration_type(txt):
 
 
 def parse_enumeration(parent_off):
-    txts = dwarfutils.extract_dies_by_offset(
-        args.dwarffile.name, parent_off, children=True
-    )
+    txts = dwarfutils.extract_dies_by_offset(args.dwarffile.name, parent_off, children=True)
     assert dwarfutils.extract_tag(txts[0]) == "TAG_enumeration_type"
     for txt in txts[1:]:
         if "TAG_enumerator" in txt:
             off = dwarfutils.extract_offset(txt)
             DIEs[off] = DIEEnumerator(
-                name=dwarfutils.extract_name(txt),
-                const_value=dwarfutils.extract_const_value(txt),
+                name=dwarfutils.extract_name(txt), const_value=dwarfutils.extract_const_value(txt)
             )
             DIEs[parent_off].members.append(off)
         elif "NULL" in txt:
@@ -153,9 +148,7 @@ def parse_member_type(txt):
         bit_size = dwarfutils.extract_bit_size(txt)
     except AttributeError:
         bit_size = -1
-    DIEs[off] = DIEMember(
-        name=name, ttype=(type_off, type_name), location=location, bit_size=bit_size
-    )
+    DIEs[off] = DIEMember(name=name, ttype=(type_off, type_name), location=location, bit_size=bit_size)
 
 
 @dataclasses.dataclass
@@ -197,9 +190,7 @@ def parse_structure_type(txt):
 
 
 def parse_struct(parent_off):
-    txts = dwarfutils.extract_dies_by_offset(
-        args.dwarffile.name, parent_off, children=True
-    )
+    txts = dwarfutils.extract_dies_by_offset(args.dwarffile.name, parent_off, children=True)
     level = 0
     for txt in txts[1:]:
         if "TAG_member" in txt:
@@ -247,9 +238,7 @@ def parse_subroutine_type(txt):
 
 
 def parse_subroutine(parent_off):
-    txts = dwarfutils.extract_dies_by_offset(
-        args.dwarffile.name, parent_off, children=True
-    )
+    txts = dwarfutils.extract_dies_by_offset(args.dwarffile.name, parent_off, children=True)
     assert dwarfutils.extract_tag(txts[0]) == "TAG_subroutine_type"
     for txt in txts[1:]:
         if "TAG_formal_parameter" in txt:
@@ -398,13 +387,7 @@ def _compute_deps(off, deps_cache, ptroffs):
         deps_cache[off] = deps
         return deps
 
-    elif any(
-        (
-            isinstance(die, DIEStructure),
-            isinstance(die, DIESubroutine),
-            isinstance(die, DIEUnion),
-        )
-    ):
+    elif any((isinstance(die, DIEStructure), isinstance(die, DIESubroutine), isinstance(die, DIEUnion))):
         if isinstance(die, DIESubroutine):
             type_off, type_name = die.ttype
             if type_off and type_name:
@@ -446,9 +429,7 @@ def _resolve_type(die):
             child_off = None
 
     if isinstance(die, DIEArray):
-        return "{}[{}]".format(
-            _resolve_type(child_off), die.size if die.size >= 0 else ""
-        )
+        return "{}[{}]".format(_resolve_type(child_off), die.size if die.size >= 0 else "")
 
     elif isinstance(die, DIEBase):
         return die.name
@@ -461,8 +442,7 @@ def _resolve_type(die):
             return "enum {}".format(die.name)
         else:
             members = "\n".join(
-                "{} = {},".format(DIEs[mem_off].name, DIEs[mem_off].const_value)
-                for mem_off in die.members
+                "{} = {},".format(DIEs[mem_off].name, DIEs[mem_off].const_value) for mem_off in die.members
             )
             return "enum {{\n{}\n}}".format(members)
 
@@ -482,18 +462,12 @@ def _resolve_type(die):
         if die.name:
             return "{} {}".format(dtype, die.name)
         else:
-            members = "\n".join(
-                _generate_declaration(mem_off) for mem_off in die.members
-            )
+            members = "\n".join(_generate_declaration(mem_off) for mem_off in die.members)
             return "{} {{\n{}\n}}".format(dtype, members)
 
     elif isinstance(die, DIESubroutine):
-        members = ",".join(
-            _generate_declaration(mem_off).replace(";", "") for mem_off in die.members
-        )
-        return "{} ()({})".format(
-            _resolve_type(child_off) if child_off else "void", members
-        )
+        members = ",".join(_generate_declaration(mem_off).replace(";", "") for mem_off in die.members)
+        return "{} ()({})".format(_resolve_type(child_off) if child_off else "void", members)
 
     elif isinstance(die, DIETypedef):
         return die.name
@@ -549,27 +523,20 @@ def _generate_declaration(off):
             return "{} {}:{};  {}".format(type_str, name, bit_size, _member_off(die))
 
     try:
-        array_size_with_brackets, = re.search(r"(\[\d*\])$", type_str).groups()
+        (array_size_with_brackets,) = re.search(r"(\[\d*\])$", type_str).groups()
     except AttributeError:
         pass
     else:
         return "{} {}{};  {}".format(
-            type_str.replace(array_size_with_brackets, ""),
-            name,
-            array_size_with_brackets,
-            _member_off(die),
+            type_str.replace(array_size_with_brackets, ""), name, array_size_with_brackets, _member_off(die)
         )
 
     try:
-        ret_type_str, params, ptrs = re.search(
-            r"(.*?) *\(\)\((.*?)\)(\**)$", type_str
-        ).groups()
+        ret_type_str, params, ptrs = re.search(r"(.*?) *\(\)\((.*?)\)(\**)$", type_str).groups()
     except AttributeError:
         pass
     else:
-        return "{} ({}{})({});  {}".format(
-            ret_type_str, ptrs, name, params, _member_off(die)
-        )
+        return "{} ({}{})({});  {}".format(ret_type_str, ptrs, name, params, _member_off(die))
 
     return "{} {};  {}".format(type_str, name, _member_off(die))
 
@@ -579,10 +546,7 @@ def _generate_definition(off):
 
     if isinstance(die, DIEEnumeration):
         assert die.name
-        members = "\n".join(
-            "{} = {},".format(DIEs[mem_off].name, DIEs[mem_off].const_value)
-            for mem_off in die.members
-        )
+        members = "\n".join("{} = {},".format(DIEs[mem_off].name, DIEs[mem_off].const_value) for mem_off in die.members)
         return "enum {} {{\n{}\n}}; {}".format(die.name, members, _dwarf_off(off))
 
     elif any((isinstance(die, DIEStructure), isinstance(die, DIEUnion))):
@@ -591,9 +555,7 @@ def _generate_definition(off):
         if die.byte_size == -1:
             return "{} {}; {}".format(dtype, die.name, _dwarf_off(off))
         members = "\n".join(_generate_declaration(mem_off) for mem_off in die.members)
-        return "{} {} {{\n{}\n}}; {}".format(
-            dtype, die.name, members, _struct_info(off)
-        )
+        return "{} {} {{\n{}\n}}; {}".format(dtype, die.name, members, _struct_info(off))
 
     elif isinstance(die, DIETypedef):
         type_off, _ = die.ttype
@@ -601,9 +563,7 @@ def _generate_definition(off):
 
         child_type_str = _resolve_type(child_off)
         try:
-            array_size_with_brackets, = re.search(
-                r"(\[\d*\])$", child_type_str
-            ).groups()
+            (array_size_with_brackets,) = re.search(r"(\[\d*\])$", child_type_str).groups()
         except AttributeError:
             pass
         else:
@@ -615,15 +575,11 @@ def _generate_definition(off):
             )
 
         try:
-            ret_type_str, params, ptrs = re.search(
-                r"(.+?) \(\)\((.*?)\)(\*?)$", child_type_str
-            ).groups()
+            ret_type_str, params, ptrs = re.search(r"(.+?) \(\)\((.*?)\)(\*?)$", child_type_str).groups()
         except AttributeError:
             pass
         else:
-            return "typedef {} ({}{})({}); {}".format(
-                ret_type_str, ptrs, die.name, params, _dwarf_off(off)
-            )
+            return "typedef {} ({}{})({}); {}".format(ret_type_str, ptrs, die.name, params, _dwarf_off(off))
 
         return "typedef {} {}; {}".format(child_type_str, die.name, _dwarf_off(off))
 

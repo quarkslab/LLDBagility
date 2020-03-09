@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import argparse
 import re
 import subprocess
@@ -11,8 +11,7 @@ def extract_var_info(dwarffilepath, varname):
     for textdie in textdies:
         try:
             location, b, addr = re.search(
-                r"AT_location\( \<(0x[0-9a-f]+)> ([0-9a-f]+) .+? \( addr (0x[0-9a-f]+)",
-                textdie,
+                r"AT_location\( \<(0x[0-9a-f]+)> ([0-9a-f]+) .+? \( addr (0x[0-9a-f]+)", textdie
             ).groups()
             location = int(location, 16)
             b = int(b, 16)
@@ -45,24 +44,17 @@ if __name__ == "__main__":
         dwarffile = f.read()
 
     dwarffile_addr_offset = (
-        dwarffile.find(bytes_to_find_in_dwarffile)
-        + len(bytes_to_find_in_dwarffile)
-        - curr_addr_len_in_bytes
+        dwarffile.find(bytes_to_find_in_dwarffile) + len(bytes_to_find_in_dwarffile) - curr_addr_len_in_bytes
     )
 
     dwarffile_addr_value = int.from_bytes(
-        dwarffile[
-            dwarffile_addr_offset : dwarffile_addr_offset + curr_addr_len_in_bytes
-        ],
-        byteorder="little",
+        dwarffile[dwarffile_addr_offset : dwarffile_addr_offset + curr_addr_len_in_bytes], byteorder="little"
     )
     assert dwarffile_addr_value == curr_addr
 
     new_addr = args.newaddr.to_bytes(8, byteorder="little")
 
     new_dwarffile = bytearray(dwarffile)
-    new_dwarffile[
-        dwarffile_addr_offset : dwarffile_addr_offset + len(new_addr)
-    ] = new_addr
+    new_dwarffile[dwarffile_addr_offset : dwarffile_addr_offset + len(new_addr)] = new_addr
     with open(args.dwarffile.name, "wb") as f:
         f.write(new_dwarffile)
