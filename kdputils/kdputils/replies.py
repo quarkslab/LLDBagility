@@ -1,5 +1,4 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 from . import protocol
 
 # https://github.com/apple/darwin-xnu/blob/xnu-4903.221.2/osfmk/kdp/kdp.c

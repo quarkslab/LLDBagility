@@ -1,5 +1,4 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 from . import protocol
 
 # https://github.com/llvm/llvm-project/blob/llvmorg-8.0.0/lldb/source/Plugins/Process/MacOSX-Kernel/CommunicationKDP.cpp

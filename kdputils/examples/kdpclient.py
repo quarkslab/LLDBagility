@@ -1,5 +1,4 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 import argparse
 import socket
 
@@ -63,7 +62,7 @@ class KDPClient:
             replypkt["is_reply"] and replypkt["request"] == KDPRequest.KDP_KERNELVERSION
         )
         self.seqid += 1
-        return replypkt["version"]
+        return replypkt["version"].decode("ascii")
 
 
 if __name__ == "__main__":
