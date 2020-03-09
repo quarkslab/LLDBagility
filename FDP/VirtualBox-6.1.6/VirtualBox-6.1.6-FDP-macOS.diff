@@ -1,0 +1,4423 @@
+diff --git a/Config.kmk b/Config.kmk
+index 55a20b08..03ce4940 100644
+--- a/Config.kmk
++++ b/Config.kmk
+@@ -958,7 +958,9 @@ endif
+ # Continue to support Vista w/o any service pack, at least for now.
+ VBOX_WITH_VISTA_NO_SP = 1
+ # Enable image verification on darwin @bugref{9232}.
+-VBOX_WITH_DARWIN_R0_DARWIN_IMAGE_VERIFICATION = 1
++# FDPCODE Disable image verification to fix unresolved symbols
++VBOX_WITH_DARWIN_R0_DARWIN_IMAGE_VERIFICATION =
++# ENDFDPCODE
+ ## @}
+ 
+ 
+diff --git a/configure b/configure
+index 566f237d..3c877f41 100755
+--- a/configure
++++ b/configure
+@@ -1504,7 +1504,9 @@ EOF
+     # Now try the user provided directory and some of the standard directories.
+     QT_TRIES="$QT5DIR /System/Library /Library"
+     for t in $QT_TRIES; do
+-      if [ -f "$t/Frameworks/QtCore.framework/QtCore" ]; then
++      # FDPCODE
++      if [ -f "$t/lib/QtCore.framework/QtCore" ]; then
++        # ENDFDPCODE
+         PATH_SDK_QT5="$t"
+         break
+       fi
+@@ -1512,8 +1514,10 @@ EOF
+     # Add the necessary params for building the test application
+     if [ -n "$PATH_SDK_QT5" ]; then
+       foundqt5=1
+-      INCQT5=-I$PATH_SDK_QT5/Frameworks/QtCore.framework/Headers
+-      LIBQT5=-F$PATH_SDK_QT5/Frameworks
++      # FDPCODE
++      INCQT5=-I$PATH_SDK_QT5/lib/QtCore.framework/Headers
++      LIBQT5=-F$PATH_SDK_QT5/lib
++      # ENDFDPCODE
+       FLGQT5="-framework QtCore"
+     else
+       log_failure "Qt5 framework not found (can be disabled using --disable-qt)"
+@@ -1594,9 +1598,11 @@ EOF
+         if [ "$OS" = "darwin" ]; then
+           # Successful build & run the test application so add the necessary
+           # params to AutoConfig.kmk:
+-          cnf_append "PATH_SDK_QT5_INC" "$PATH_SDK_QT5/Frameworks"
+-          cnf_append "PATH_SDK_QT5_LIB" "$PATH_SDK_QT5/Frameworks"
+-          cnf_append "PATH_SDK_QT5" "$PATH_SDK_QT5/Frameworks"
++          # FDPCODE
++          cnf_append "PATH_SDK_QT5_INC" "$PATH_SDK_QT5/inc"
++          cnf_append "PATH_SDK_QT5_LIB" "$PATH_SDK_QT5/lib"
++          cnf_append "PATH_SDK_QT5" "$PATH_SDK_QT5"
++          # ENDFDPCODE
+           # Check for the moc tool in the Qt directory found & some standard
+           # directories.
+           for q in $PATH_SDK_QT5 /usr /Developer/Tools/Qt; do
+@@ -2196,6 +2202,16 @@ check_darwinversion()
+   test_header "Darwin version"
+   darwin_ver=`uname -r`
+   case "$darwin_ver" in
++    # FDPCODE
++    18\.*)
++      check_xcode_sdk_path "$WITH_XCODE_DIR"
++      [ $? -eq 1 ] || fail
++      darwin_ver="10.14" # Mojave
++      sdk=$WITH_XCODE_DIR/Developer/SDKs/MacOSX10.6.sdk
++      cnf_append "VBOX_WITH_MACOSX_COMPILERS_FROM_DEVEL" "1"
++      cnf_append "VBOX_PATH_MACOSX_DEVEL_ROOT" "$WITH_XCODE_DIR/Developer"
++      ;;
++    # ENDFDPCODE
+     17\.*)
+       check_xcode_sdk_path "$WITH_XCODE_DIR"
+       [ $? -eq 1 ] || fail
+diff --git a/include/VBox/vmm/em.h b/include/VBox/vmm/em.h
+index e15ed5ea..f394b11e 100644
+--- a/include/VBox/vmm/em.h
++++ b/include/VBox/vmm/em.h
+@@ -331,6 +331,10 @@ VMMR3DECL(DECLNORETURN(void))   EMR3FatalError(PVMCPU pVCpu, int rc);
+ VMMR3_INT_DECL(int)             EMR3ExecuteVM(PVM pVM, PVMCPU pVCpu);
+ VMMR3_INT_DECL(int)             EMR3CheckRawForcedActions(PVM pVM, PVMCPU pVCpu);
+ VMMR3_INT_DECL(VBOXSTRICTRC)    EMR3HmSingleInstruction(PVM pVM, PVMCPU pVCpu, uint32_t fFlags);
++/*FDPCODE*/
++VMMR3_INT_DECL(void)            EMR3ResetU(PUVM pUVM);
++VMMR3_INT_DECL(int)             EMR3ProcessForcedAction(PVM pVM, PVMCPU pVCpu, int rc);
++/*ENDFDPCODE*/
+ 
+ /** @} */
+ #endif /* IN_RING3 */
+diff --git a/include/VBox/vmm/gmm.h b/include/VBox/vmm/gmm.h
+index dc358d84..611465fb 100644
+--- a/include/VBox/vmm/gmm.h
++++ b/include/VBox/vmm/gmm.h
+@@ -550,6 +550,16 @@ typedef GMMMEMSTATSREQ *PGMMMEMSTATSREQ;
+ GMMR0DECL(int)  GMMR0QueryHypervisorMemoryStatsReq(PGMMMEMSTATSREQ pReq);
+ GMMR0DECL(int)  GMMR0QueryMemoryStatsReq(PGVM pGVM, VMCPUID idCpu, PGMMMEMSTATSREQ pReq);
+ 
++/*FDPCODE*/
++typedef struct ALLOCPAGEREQ
++{
++    SUPVMMR0REQHDR Hdr;
++    uint64_t       newPageSize;
++    uint64_t       newPageHCPHys;
++    uint8_t*       newPageR3Ptr;
++} ALLOCPAGEREQ;
++/*ENDFDPCODE*/
++
+ /**
+  * Request buffer for GMMR0MapUnmapChunkReq / VMMR0_DO_GMM_MAP_UNMAP_CHUNK.
+  * @see GMMR0MapUnmapChunk
+diff --git a/include/VBox/vmm/hm.h b/include/VBox/vmm/hm.h
+index d004843c..9125e4d2 100644
+--- a/include/VBox/vmm/hm.h
++++ b/include/VBox/vmm/hm.h
+@@ -152,6 +152,9 @@ VMM_INT_DECL(TRPMEVENT)         HMSvmEventToTrpmEventType(PCSVMEVENT pSvmEvent,
+  * @{ */
+ VMM_INT_DECL(int)               HMFlushTlb(PVMCPU pVCpu);
+ VMM_INT_DECL(int)               HMFlushTlbOnAllVCpus(PVMCC pVM);
++/*FDPCODE*/
++VMM_INT_DECL(int)               HMFlushTLBOnAllVCpus2(PVMCPUCC pVCpu);
++/*ENDFDPCODE*/
+ VMM_INT_DECL(int)               HMInvalidatePageOnAllVCpus(PVMCC pVM, RTGCPTR GCVirt);
+ VMM_INT_DECL(int)               HMInvalidatePhysPage(PVMCC pVM, RTGCPHYS GCPhys);
+ VMM_INT_DECL(bool)              HMAreNestedPagingAndFullGuestExecEnabled(PVM pVM);
+@@ -203,6 +206,9 @@ VMM_INT_DECL(int)               HMHCMaybeMovTprSvmHypercall(PVMCC pVM, PVMCPUCC
+  * @{
+  */
+ VMMR0_INT_DECL(int)             HMR0Init(void);
++/*FDPCODE*/
++VMMR0_INT_DECL(int)             HMR0FlushEPT(PVM pVM, PVMCPU pVCpu);
++/*ENDFDPCODE*/
+ VMMR0_INT_DECL(int)             HMR0Term(void);
+ VMMR0_INT_DECL(int)             HMR0InitVM(PVMCC pVM);
+ VMMR0_INT_DECL(int)             HMR0TermVM(PVMCC pVM);
+diff --git a/include/VBox/vmm/mm.h b/include/VBox/vmm/mm.h
+index 08ed77f8..38d6fc38 100644
+--- a/include/VBox/vmm/mm.h
++++ b/include/VBox/vmm/mm.h
+@@ -215,6 +215,9 @@ VMMDECL(bool)       MMHyperIsInsideArea(PVM pVM, RTGCPTR GCPtr);
+ #if 0
+ VMMDECL(RTHCPHYS)   MMPage2Phys(PVM pVM, void *pvPage);
+ VMMDECL(void *)     MMPagePhys2Page(PVM pVM, RTHCPHYS HCPhysPage);
++/*FDPCODE*/
++VMMDECL(void*)      MMPagePhys2PageU(PUVM pUVM, RTHCPHYS HCPhysPage);
++/*ENDCODE*/
+ VMMDECL(int)        MMPagePhys2PageEx(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage);
+ VMMDECL(int)        MMPagePhys2PageTry(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage);
+ #endif
+@@ -281,6 +284,9 @@ VMMR3DECL(int)      MMR3HyperReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, siz
+  * @todo retire this group, elimintating or moving MMR3PhysGetRamSize to PGMPhys.
+  * @{ */
+ VMMR3DECL(uint64_t) MMR3PhysGetRamSize(PVM pVM);
++/*FDPCODE*/
++VMMR3DECL(uint64_t) MMR3PhysGetRamSizeU(PUVM pUVM);
++/*ENDFDPCODE*/
+ VMMR3DECL(uint32_t) MMR3PhysGetRamSizeBelow4GB(PVM pVM);
+ VMMR3DECL(uint64_t) MMR3PhysGetRamSizeAbove4GB(PVM pVM);
+ VMMR3DECL(uint32_t) MMR3PhysGet4GBRamHoleSize(PVM pVM);
+diff --git a/include/VBox/vmm/pgm.h b/include/VBox/vmm/pgm.h
+index 3be1a767..f79d1162 100644
+--- a/include/VBox/vmm/pgm.h
++++ b/include/VBox/vmm/pgm.h
+@@ -342,6 +342,21 @@ VMMDECL(int)            PGMShwMakePageNotPresent(PVMCPUCC pVCpu, RTGCPTR GCPtr,
+ /** The page is an MMIO2. */
+ #define PGM_MK_PG_IS_MMIO2           RT_BIT(1)
+ /** @}*/
++/*FDPCODE*/
++VMMDECL(int)        PGMShwGetHCPage(PVMCPUCC pVCpu, uint64_t GCPhys, uint64_t* HCPhys);
++VMMDECL(int)        PGMShwSetHCPage(PVMCPUCC pVCpu, uint64_t GCPhys, uint64_t HCPhys);
++VMMDECL(int)        PGMShwSaveRights(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwRestoreRights(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwPresent(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwNoPresent(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwWrite(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwNoWrite(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwExecute(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwNoExecute(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwInvalidate(PVMCPUCC pVCpu, uint64_t GCPhys);
++VMMDECL(int)        PGMShwSetBreakable(PVMCPUCC pVCpu, uint64_t GCPhys, bool Breakable);
++VMMDECL(bool)       PGMShwIsBreakable(PVMCPUCC pVCpu, uint64_t GCPhys);
++/*ENDFDPCODE*/
+ VMMDECL(int)        PGMGstGetPage(PVMCPUCC pVCpu, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
+ VMMDECL(bool)       PGMGstIsPagePresent(PVMCPUCC pVCpu, RTGCPTR GCPtr);
+ VMMDECL(int)        PGMGstSetPage(PVMCPUCC pVCpu, RTGCPTR GCPtr, size_t cb, uint64_t fFlags);
+@@ -550,6 +565,9 @@ VMMDECL(VBOXSTRICTRC) PGMPhysReadGCPtr(PVMCPUCC pVCpu, void *pvDst, RTGCPTR GCPt
+ VMMDECL(VBOXSTRICTRC) PGMPhysWriteGCPtr(PVMCPUCC pVCpu, RTGCPTR GCPtrDst, const void *pvSrc, size_t cb, PGMACCESSORIGIN enmOrigin);
+ 
+ VMMDECL(int)        PGMPhysSimpleReadGCPhys(PVMCC pVM, void *pvDst, RTGCPHYS GCPhysSrc, size_t cb);
++/*FDPCODE*/
++VMMDECL(int)        PGMPhysSimpleReadGCPhys2(PUVM pUVM, void* pvDst, RTGCPHYS GCPhysSrc, size_t cb);
++/*FDPCODE*/
+ VMMDECL(int)        PGMPhysSimpleWriteGCPhys(PVMCC pVM, RTGCPHYS GCPhysDst, const void *pvSrc, size_t cb);
+ VMMDECL(int)        PGMPhysSimpleReadGCPtr(PVMCPUCC pVCpu, void *pvDst, RTGCPTR GCPtrSrc, size_t cb);
+ VMMDECL(int)        PGMPhysSimpleWriteGCPtr(PVMCPUCC pVCpu, RTGCPTR GCPtrDst, const void *pvSrc, size_t cb);
+@@ -689,6 +707,9 @@ VMMR0DECL(int)       PGMR0Trap0eHandlerNestedPaging(PGVM pGVM, PGVMCPU pGVCpu, P
+                                                     PCPUMCTXCORE pRegFrame, RTGCPHYS pvFault);
+ VMMR0DECL(VBOXSTRICTRC) PGMR0Trap0eHandlerNPMisconfig(PGVM pGVM, PGVMCPU pGVCpu, PGMMODE enmShwPagingMode,
+                                                       PCPUMCTXCORE pRegFrame, RTGCPHYS GCPhysFault, uint32_t uErr);
++/*FDPCODE*/
++VMMR0DECL(VBOXSTRICTRC) PGMR0PhysSimpleReadGCPhys(PVM pVM, void* pvDst, RTGCPHYS GCPhysSrc, size_t cb);
++/*ENDFDPCODE*/
+ VMMR0_INT_DECL(int)  PGMR0PoolGrow(PGVM pGVM);
+ 
+ # ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+@@ -720,6 +741,9 @@ VMMR3_INT_DECL(void)    PGMR3ResetNoMorePhysWritesFlag(PVM pVM);
+ VMMR3_INT_DECL(void)    PGMR3MemSetup(PVM pVM, bool fReset);
+ VMMR3DECL(int)      PGMR3Term(PVM pVM);
+ VMMR3DECL(int)      PGMR3LockCall(PVM pVM);
++/*FDPCODE*/
++VMMR3DECL(int)      PGMR3ChangeMode2(PUVM pUVM, PVMCPU pVCpu, PGMMODE enmGuestMode);
++/*ENDFDPCODE*/
+ 
+ VMMR3DECL(int)      PGMR3PhysRegisterRam(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb, const char *pszDesc);
+ VMMR3DECL(int)      PGMR3PhysChangeMemBalloon(PVM pVM, bool fInflate, unsigned cPages, RTGCPHYS *paPhysPage);
+@@ -816,6 +840,11 @@ VMMR3DECL(int)      PGMR3PhysBulkGCPhys2CCPtrReadOnlyExternal(PVM pVM, uint32_t
+ VMMR3DECL(int)      PGMR3PhysChunkMap(PVM pVM, uint32_t idChunk);
+ VMMR3DECL(void)     PGMR3PhysChunkInvalidateTLB(PVM pVM);
+ VMMR3DECL(int)      PGMR3PhysAllocateHandyPages(PVM pVM);
++/*FDPCODE*/
++VMMR3DECL(int)      PGMR3PhysAllocateLargeHandyPage2(PVM pVM);
++VMMR3_INT_DECL(int) PGMR3DbgScanPhysicalU(PUVM pUVM, RTGCPHYS GCPhys, RTGCPHYS cbRange, RTGCPHYS GCPhysAlign, const uint8_t* pabNeedle,
++                                          size_t cbNeedle, PRTGCPHYS pGCPhysHit);
++/*ENDFDPCODE*/
+ VMMR3DECL(int)      PGMR3PhysAllocateLargeHandyPage(PVM pVM, RTGCPHYS GCPhys);
+ 
+ VMMR3DECL(int)      PGMR3CheckIntegrity(PVM pVM);
+diff --git a/include/VBox/vmm/vm.h b/include/VBox/vmm/vm.h
+index d56e2d5c..bc773d40 100644
+--- a/include/VBox/vmm/vm.h
++++ b/include/VBox/vmm/vm.h
+@@ -54,6 +54,66 @@
+  * @{
+  */
+ 
++/*FDPCODE*/
++#define FDPVBOX_MAX_BREAKPOINT_ID 254
++
++typedef struct HardwarePage_t
++{
++    int      ReferenceCount;  //Number of breakpoint using this page
++    uint64_t PageSize;        //Size of the page
++    uint64_t HCPhys;          //Host-Context physical address of the page
++    uint8_t* R3Ptr;           //Ring-3 virtual address of the page
++} HardwarePage_t;
++
++typedef struct GCPhysArea_t
++{
++    uint64_t Start;
++    uint64_t End;
++} GCPhysArea_t;
++
++typedef struct PfnEntrie_t
++{
++    uint8_t n;
++    struct
++    {
++        bool u1Present;
++        bool u1Write;
++        bool u1Execute;
++        bool u1Breakable;
++    } u;
++} PfnEntrie_t;
++
++typedef struct BreakpointEntrie_t
++{
++    //Is the breakpoint activated or free
++    bool breakpointActivated;
++    //Tag the breakpoint to know if the breakpoint changed...
++    uint64_t breakpointTag;
++    //Kind of breakpoint PAGEHBP, HARDHBP, SOFTHBP
++    uint8_t breakpointType;
++    //Guest virtual address of the breakpoint or start of the breakpoint
++    uint64_t breakpointGCPtr;
++    //Guest physical address of the breakpoint or start of the breakpoint
++    uint64_t breakpointGCPhys;
++    //Lengt of the breakpoint (PAGEHBP only)
++    uint64_t breakpointLength;
++    //EXECUTE_BP, READ_BP, WRITE_BP
++    uint8_t breakpointAccessType;
++    //Size of the page where the breakpoint is
++    uint64_t breakpointPageSize;
++    //Original host physical page
++    uint64_t breakpointOrigHCPhys;
++    //Original opcode byte
++    uint8_t breakpointOriginalByte;
++    //Pointer to HardwarePage
++    HardwarePage_t* breakpointHardwarePage;
++    uint64_t        breakpointGCPhysAreaCount;
++    GCPhysArea_t*   breakpointGCPhysAreaTable;
++    //Condition
++    uint64_t breakpointCr3;
++} BreakpointEntrie_t;
++/*ENDFDPCODE*/
++
+ /**
+  * The state of a Virtual CPU.
+  *
+@@ -144,6 +204,34 @@ typedef struct VMCPU
+         uint8_t             padding[18496];     /* multiple of 64 */
+     } iem;
+ 
++    /*FDPCODE*/
++    union {
++        struct
++        {
++            volatile uint8_t u8StateBitmap;
++            volatile bool    bSingleStepRequired;
++            volatile bool    bPauseRequired;
++            volatile bool    bDisableInterrupt;
++            volatile bool    bRebootRequired;
++            volatile bool    bSuspendRequired;
++            volatile bool    bRestoreRequired;
++            volatile bool    bPageFaultOverflowGuard;
++
++            volatile bool bHardHyperBreakPointHitted;
++            volatile bool bPageHyperBreakPointHitted;
++            volatile bool bSoftHyperBreakPointHitted;
++            volatile bool bMsrHyperBreakPointHitted;
++            volatile bool bCrHyperBreakPointHitted;
++            volatile bool bInstallDrBreakpointRequired;
++            //Fake Debug registers to keep "legit-guest" values
++            uint64_t          aGuestDr[8];
++            volatile uint64_t u64TickCount;
++            void*             pCpuShm;
++        } s;
++        uint8_t padding[4096]; /* multiple of 4096 */
++    } fdpstate;
++    /*ENDFDPCODE*/
++
+     /** @name Static per-cpu data.
+      * (Putting this after IEM, hoping that it's less frequently used than it.)
+      * @{ */
+@@ -1263,6 +1351,29 @@ typedef struct VM
+         uint8_t     padding[1600];      /* multiple of 64 */
+     } vmm;
+ 
++    /*FDPCODE*/
++    union {
++        BreakpointEntrie_t l[FDPVBOX_MAX_BREAKPOINT_ID + 1];
++        uint8_t            padding[4096 * 32]; /* Must be page aligned ! */
++    } bp;
++
++    union {
++        struct
++        {
++            void*            pFdpShm;
++            uint32_t         u32HardwarePageTableCount;
++            HardwarePage_t   aHardwarePageTable[FDPVBOX_MAX_BREAKPOINT_ID + 1];
++            volatile uint8_t u8StateBitmap;
++            char             PageSpinLockName[256];
++            RTSPINLOCK       PageSpinlock;
++            PfnEntrie_t*     pPfnTableR3;
++            PfnEntrie_t*     pPfnTableR0;
++            RTSPINLOCK       CpuLock;
++        } s;
++        uint8_t padding[4096 * 4]; /* Must be page aligned ! */
++    } fdpstate;
++    /*ENDFDPCODE*/
++
+     /** PGM part. */
+     union
+     {
+diff --git a/include/VBox/vmm/vm.mac b/include/VBox/vmm/vm.mac
+index 072b3a99..4f23dd83 100644
+--- a/include/VBox/vmm/vm.mac
++++ b/include/VBox/vmm/vm.mac
+@@ -50,6 +50,9 @@ struc VMCPU
+ 
+     alignb 64
+     .iem                    resb 18496
++    ; FDPCODE
++    .fdpstate               resb 4096
++    ; ENDFDPCODE
+ 
+     alignb 64
+     .pVMR3                  RTR3PTR_RES 1
+@@ -120,6 +123,10 @@ struc VM
+     alignb 64
+     .cpum                   resb 1536
+     .vmm                    resb 1600
++    ; FDPCODE
++    .bp                     resb (4096*32)
++    .fdpstate               resb (4096*4)
++    ; ENDFDPCODE
+     .pgm                    resb 21120
+     .hm                     resb 5504
+     .trpm                   resb 5248
+diff --git a/include/VBox/vmm/vmapi.h b/include/VBox/vmm/vmapi.h
+index 2e9da4f8..ecebafb8 100644
+--- a/include/VBox/vmm/vmapi.h
++++ b/include/VBox/vmm/vmapi.h
+@@ -380,6 +380,9 @@ VMMR3DECL(int)          VMR3Reset(PUVM pUVM);
+ VMMR3_INT_DECL(VBOXSTRICTRC) VMR3ResetFF(PVM pVM);
+ VMMR3_INT_DECL(VBOXSTRICTRC) VMR3ResetTripleFault(PVM pVM);
+ VMMR3DECL(int)          VMR3Save(PUVM pUVM, const char *pszFilename, bool fContinueAfterwards, PFNVMPROGRESS pfnProgress, void *pvUser, bool *pfSuspended);
++/*FDPCODE*/
++VMMR3_INT_DECL(int)     VMR3SaveFT(PUVM pUVM, PCSSMSTRMOPS pStreamOps, void* pvStreamOpsUser, bool* pfSuspended);
++/*ENDFDPCODE*/
+ VMMR3DECL(int)          VMR3Teleport(PUVM pUVM, uint32_t cMsDowntime, PCSSMSTRMOPS pStreamOps, void *pvStreamOpsUser, PFNVMPROGRESS pfnProgress, void *pvProgressUser, bool *pfSuspended);
+ VMMR3DECL(int)          VMR3LoadFromFile(PUVM pUVM, const char *pszFilename, PFNVMPROGRESS pfnProgress, void *pvUser);
+ VMMR3DECL(int)          VMR3LoadFromStream(PUVM pUVM, PCSSMSTRMOPS pStreamOps, void *pvStreamOpsUser,
+@@ -442,6 +445,34 @@ VMMR3_INT_DECL(void)        VMR3NotifyGlobalFFU(PUVM pUVM, uint32_t fFlags);
+ VMMR3_INT_DECL(void)        VMR3NotifyCpuFFU(PUVMCPU pUVMCpu, uint32_t fFlags);
+ VMMR3DECL(int)              VMR3NotifyCpuDeviceReady(PVM pVM, VMCPUID idCpu);
+ VMMR3_INT_DECL(int)         VMR3WaitHalted(PVM pVM, PVMCPU pVCpu, bool fIgnoreInterrupts);
++/*FDPCODE*/
++VMMDECL(uint8_t)            VMR3GetFDPState(PUVM pUVM);
++VMMR3_INT_DECL(int)         VMR3AddExecHardBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint64_t GCPtr, uint8_t BreakpointId);
++VMMR3_INT_DECL(int)         VMR3AddSoftBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint8_t BreakpointAddressType, uint64_t BreakpointAddress,
++                                                  uint64_t BreakpointCr3);
++VMMR3_INT_DECL(int)         VMR3AddPageBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint8_t BreakpointId, uint8_t BreakpointAccessType,
++                                                  uint8_t BreakpointAddressType, uint64_t BreakpointAddress, uint64_t BreakpointLength);
++VMMR3_INT_DECL(int)         VMR3AddMsrBreakpoint(PUVM pUVM, uint8_t BreakpointAccessType, uint64_t BreakpointAddress);
++VMMR3_INT_DECL(int)         VMR3AddCrBreakpoint(PUVM pUVM, uint8_t BreakpointAccessType, uint64_t BreakpointAddress);
++VMMR3_INT_DECL(void)        VMR3ClearBreakpoint(uint8_t BreakpointId);
++VMMR3_INT_DECL(bool)        VMR3IsBreakpoint(uint64_t CurrentRIP);
++VMMDECL(int)                VMR3PhysSimpleReadGCPhysU(PUVM pUVM, void* pvDst, RTGCPHYS GCPhysSrc, size_t cb);
++VMMDECL(int)                VMR3PhysSimpleWriteGCPhysU(PUVM pUVM, const void* pvBuf, RTGCPHYS GCPhys, size_t cbWrite);
++VMMR3_INT_DECL(int)         VMR3AddExecPageBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint64_t GCPtr, uint64_t Length);
++VMMR3_INT_DECL(bool)        VMR3RemoveBreakpoint(PUVM pUVM, int BreakpointId);
++VMMDECL(int)                VMR3SingleStep(PUVM pUVM, PVMCPU pVCpu);
++VMMDECL(int)                VMR3Break(PUVM pUVM);
++VMMDECL(int)                VMR3Continue(PUVM pUVM);
++VMMDECL(bool)               VMR3GetFDPRunning(PUVM pUVM);
++VMMDECL(void)               VMR3SetFDPRunning(PUVM pUVM, bool newFDPRunning);
++VMMR3DECL(uint32_t)         VMR3GetCPUCount(PUVM pUVM);
++VMMDECL(bool)               VMR3HandleSingleStep(PVM pVM, PVMCPU pVCpu);
++VMMDECL(bool)               VMR3EnterPause(PVM pVM, PVMCPU pVCpu);
++VMMDECL(void)               VMR3SetFDPShm(PUVM pUVM, void* pFdpShm);
++VMMDECL(uint64_t)           VMR3Test(PVMCPU pVCpu);
++VMMDECL(int)                VMR3InjectInterrupt(PVM pVM, PVMCPU pVCpu, uint32_t enmXcpt, uint32_t uErr, uint64_t Cr2);
++VMMDECL(int)                VMR3ClearInterrupt(PUVM pUVM, PVMCPU pVCpu);
++/*ENDFDPCODE*/
+ VMMR3_INT_DECL(int)         VMR3WaitU(PUVMCPU pUVMCpu);
+ VMMR3DECL(int)              VMR3WaitForDeviceReady(PVM pVM, VMCPUID idCpu);
+ VMMR3_INT_DECL(int)         VMR3AsyncPdmNotificationWaitU(PUVMCPU pUVCpu);
+diff --git a/include/VBox/vmm/vmm.h b/include/VBox/vmm/vmm.h
+index 7273fe36..b76478fc 100644
+--- a/include/VBox/vmm/vmm.h
++++ b/include/VBox/vmm/vmm.h
+@@ -248,6 +248,11 @@ VMM_INT_DECL(uint32_t)      VMMGetSvnRev(void);
+ VMM_INT_DECL(bool)          VMMIsInRing3Call(PVMCPUCC pVCpu);
+ VMM_INT_DECL(void)          VMMTrashVolatileXMMRegs(void);
+ 
++/*FDPCODE*/
++VMM_INT_DECL(bool)          VMMMatchBreakpointId(PVM pVM, int BreakpointId, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess);
++VMM_INT_DECL(int)           VMMGetBreakpointId(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess);
++VMM_INT_DECL(int)           VMMGetBreakpointIdFromPage(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType);
++/*ENDFDPCODE*/
+ 
+ /** @defgroup grp_vmm_api_r0    The VMM Host Context Ring 0 API
+  * @{
+@@ -426,6 +431,10 @@ typedef enum VMMR0OPERATION
+     /** Official call we use for testing Ring-0 APIs. */
+     VMMR0_DO_TESTS = 704,
+ 
++    /*FDPCODE*/
++    VMMR0_DO_ALLOC_HCPHYS,
++    /*ENDFDPCODE*/
++
+     /** The usual 32-bit type blow up. */
+     VMMR0_DO_32BIT_HACK = 0x7fffffff
+ } VMMR0OPERATION;
+diff --git a/src/VBox/Debugger/DBGCTcp.cpp b/src/VBox/Debugger/DBGCTcp.cpp
+index 7a5c2ea0..cf22ba98 100644
+--- a/src/VBox/Debugger/DBGCTcp.cpp
++++ b/src/VBox/Debugger/DBGCTcp.cpp
+@@ -20,16 +20,24 @@
+ *   Header Files                                                                                                                 *
+ *********************************************************************************************************************************/
+ #include <VBox/dbg.h>
+-#include <VBox/vmm/cfgm.h>
+ #include <VBox/err.h>
++#include <VBox/vmm/cfgm.h>
++#include <fcntl.h>
++#include <stdlib.h>
++#include <sys/mman.h>
+ 
+-#include <iprt/thread.h>
+-#include <iprt/tcp.h>
+ #include <VBox/log.h>
+ #include <iprt/assert.h>
++#include <iprt/tcp.h>
++#include <iprt/thread.h>
+ 
+ #include <iprt/string.h>
+ 
++/*FDPCODE*/
++#include <VBox/vmm/vm.h>
++#include <pthread.h>
++#include <unistd.h>
++/*FDPCODE*/
+ 
+ /*********************************************************************************************************************************
+ *   Structures and Typedefs                                                                                                      *
+@@ -58,7 +66,1122 @@ typedef DBGCTCP *PDBGCTCP;
+ *********************************************************************************************************************************/
+ static DECLCALLBACK(int)  dbgcTcpConnection(RTSOCKET Sock, void *pvUser);
+ 
++/*FDPCODE*/
++#include <FDP.h>
++#include <FDP_structs.h>
++#include <stdio.h>
++
++#include <VBox/vmm/cpum.h>
++#include <VBox/vmm/mm.h>
++#include <VBox/vmm/pgm.h>
++
++#define MIN(a, b) (((a) < (b)) ? (a) : (b))
++
++#define DEBUG_LEVEL 0
++#define DEBUG_FLOW  0
++
++#if DEBUG_LEVEL > 0
++#define Log1(fmt, ...) printf(fmt, ##__VA_ARGS__)
++#else
++#define Log1(fmt, ...)
++#endif
++
++#if DEBUG_LEVEL > 2
++#define Log3(fmt, ...) printf(fmt, ##__VA_ARGS__)
++#else
++#define Log3(fmt, ...)
++#endif
++
++#ifdef DEBUG_FLOW> 0
++#define LogFloww() printf("%s\n", __FUNCTION__);
++#else
++#define LogFloww()
++#endif
++
++typedef struct _MEMORY_SSM_T
++{
++    uint8_t* pMemory;
++    uint64_t cbMemory;
++    uint64_t CurrentOffset;
++    uint64_t MaxOffset;
++} MEMORY_SSM_T;
++
++typedef struct FDPVBOX_USERHANDLE_T
++{
++    PUVM          pUVM;
++    MEMORY_SSM_T* pMemorySSM;
++    FDP_SHM*      pFDPServer;
++    uint64_t      aVisibleGuestDebugRegisterSave[7];
++    char          TempBuffer[1 * 1024 * 1024];
++} FDPVBOX_USERHANDLE_T;
++
++bool FDPVBOX_Resume(void* pUserHandle)
++{
++    LogFlow(("RESUME\n"));
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    VMR3Continue(myVBOXHandle->pUVM);
++    return true;
++}
++
++bool FDPVBOX_Pause(void* pUserHandle)
++{
++    Log1("PAUSE !\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    VMR3Break(myVBOXHandle->pUVM);
++    return true;
++}
++
++bool FDPVBOX_singleStep(void* pUserHandle, uint32_t CpuId)
++{
++    LogFlow(("SINGLE_STEP\n"));
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++    int    rc = VMR3SingleStep(myVBOXHandle->pUVM, pVCpu);
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++bool FDPVBOX_getMemorySize(void* pUserHandle, uint64_t* MemorySize)
++{
++    Log1("GET_PHYSICALMEMORYSIZE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    *MemorySize = MMR3PhysGetRamSizeU(myVBOXHandle->pUVM);
++    return true;
++}
++
++bool FDPVBOX_readPhysicalMemory(void* pUserHandle, uint8_t* pDstBuffer, uint64_t PhysicalAddress, uint32_t ReadSize)
++{
++    Log1("READ_PHYSICAL %p %d ... ", PhysicalAddress, ReadSize);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    int                   rc = VMR3PhysSimpleReadGCPhysU(myVBOXHandle->pUVM, pDstBuffer, PhysicalAddress, ReadSize);
++    Log1(" %s\n", RT_SUCCESS(rc) ? "OK" : "KO");
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++bool FDPVBOX_writePhysicalMemory(void* pUserHandle, uint8_t* pSrcBuffer, uint64_t PhysicalAddress, uint32_t WriteSize)
++{
++    Log1("WRITE_PHYSICAL %p %d...", PhysicalAddress, WriteSize);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++
++    //Check Read access
++    if (FDPVBOX_readPhysicalMemory(pUserHandle, (uint8_t*)myVBOXHandle->TempBuffer, PhysicalAddress, WriteSize) ==
++        false)
++    {
++        return false;
++    }
++    //Effective Write
++    int rc = VMR3PhysSimpleWriteGCPhysU(myVBOXHandle->pUVM, pSrcBuffer, PhysicalAddress, WriteSize);
++    Log1(" %s\n", RT_SUCCESS(rc) ? "OK" : "KO");
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++bool FDPVBOX_writeVirtualMemory(void* pUserHandle, uint32_t CpuId, uint8_t* pSrcBuffer, uint64_t VirtualAddress,
++                                uint32_t WriteSize)
++{
++    Log1("writeVirtualMemory %p %d ...", VirtualAddress, WriteSize);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++    int    rc = PGMPhysSimpleWriteGCPtr(pVCpu, VirtualAddress, pSrcBuffer, WriteSize);
++    Log1(" %s\n", RT_SUCCESS(rc) ? "OK" : "KO");
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++bool FDPVBOX_writeMsr(void* pUserHandle, uint32_t CpuId, uint64_t MSRId, uint64_t MSRValue)
++{
++    Log1("WRITE_MSR %p %p\n", MSRId, MSRValue);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU       pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++    VBOXSTRICTRC rcStrict = CPUMSetGuestMsr(pVCpu, MSRId, MSRValue);
++    return rcStrict == VINF_SUCCESS;
++}
++
++bool FDPVBOX_getState(void* pUserHandle, uint8_t* currentState)
++{
++    Log3("GET_STATE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    *currentState = VMR3GetFDPState(myVBOXHandle->pUVM);
++    return true;
++}
++
++bool FDPVBOX_getCpuState(void* pUserHandle, uint32_t CpuId, uint8_t* pCurrentState)
++{
++    Log1("GET_CPU_STATE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++    *pCurrentState = pVCpu->fdpstate.s.u8StateBitmap;
++    return true;
++}
++
++bool FDPVBOX_getCpuCount(void* pUserHandle, uint32_t* pCpuCount)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    *pCpuCount = VMR3GetCPUCount(myVBOXHandle->pUVM);
++    return true;
++}
++
++bool FDPVBOX_readMsr(void* pUserHandle, uint32_t CpuId, uint64_t MsrId, uint64_t* pMsrValue)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    CPUMQueryGuestMsr(pVCpu, MsrId, pMsrValue);
++    Log1("READ_MSR %p => %p\n", MsrId, *pMsrValue);
++    return true;
++}
++
++bool FDPVBOX_readRegister(void* pUserHandle, uint32_t CpuId, FDP_Register RegisterId, uint64_t* pRegisterValue)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    PCCPUMCTXCORE pCtxCore = CPUMGetGuestCtxCore(pVCpu);
++
++    switch (RegisterId)
++    {
++    case FDP_CR0_REGISTER:
++        *pRegisterValue = CPUMGetGuestCR0(pVCpu);
++        break;
++    case FDP_CR2_REGISTER:
++        *pRegisterValue = CPUMGetGuestCR2(pVCpu);
++        break;
++    case FDP_CR3_REGISTER:
++        *pRegisterValue = CPUMGetGuestCR3(pVCpu);
++        break;
++    case FDP_CR4_REGISTER:
++        *pRegisterValue = CPUMGetGuestCR4(pVCpu);
++        break;
++    case FDP_CR8_REGISTER:
++        *pRegisterValue = CPUMGetGuestCR8(pVCpu);
++        break;
++    case FDP_RAX_REGISTER:
++        *pRegisterValue = pCtxCore->rax;
++        break;
++    case FDP_RBX_REGISTER:
++        *pRegisterValue = pCtxCore->rbx;
++        break;
++    case FDP_RCX_REGISTER:
++        *pRegisterValue = pCtxCore->rcx;
++        break;
++    case FDP_RDX_REGISTER:
++        *pRegisterValue = pCtxCore->rdx;
++        break;
++    case FDP_R8_REGISTER:
++        *pRegisterValue = pCtxCore->r8;
++        break;
++    case FDP_R9_REGISTER:
++        *pRegisterValue = pCtxCore->r9;
++        break;
++    case FDP_R10_REGISTER:
++        *pRegisterValue = pCtxCore->r10;
++        break;
++    case FDP_R11_REGISTER:
++        *pRegisterValue = pCtxCore->r11;
++        break;
++    case FDP_R12_REGISTER:
++        *pRegisterValue = pCtxCore->r12;
++        break;
++    case FDP_R13_REGISTER:
++        *pRegisterValue = pCtxCore->r13;
++        break;
++    case FDP_R14_REGISTER:
++        *pRegisterValue = pCtxCore->r14;
++        break;
++    case FDP_R15_REGISTER:
++        *pRegisterValue = pCtxCore->r15;
++        break;
++    case FDP_RSP_REGISTER:
++        *pRegisterValue = pCtxCore->rsp;
++        break;
++    case FDP_RBP_REGISTER:
++        *pRegisterValue = pCtxCore->rbp;
++        break;
++    case FDP_RSI_REGISTER:
++        *pRegisterValue = pCtxCore->rsi;
++        break;
++    case FDP_RDI_REGISTER:
++        *pRegisterValue = pCtxCore->rdi;
++        break;
++    case FDP_RIP_REGISTER:
++        *pRegisterValue = pCtxCore->rip;
++        break;
++
++    //Visible for Guest Debug Register
++    case FDP_VDR0_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[0];
++        break;
++    case FDP_VDR1_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[1];
++        break;
++    case FDP_VDR2_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[2];
++        break;
++    case FDP_VDR3_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[3];
++        break;
++    case FDP_VDR6_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[6];
++        break;
++    case FDP_VDR7_REGISTER:
++        *pRegisterValue = pVCpu->fdpstate.s.aGuestDr[7];
++        break;
++
++    //Invisible for Guest Debug Register
++    case FDP_DR0_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR0(pVCpu);
++        break;
++    case FDP_DR1_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR1(pVCpu);
++        break;
++    case FDP_DR2_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR2(pVCpu);
++        break;
++    case FDP_DR3_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR3(pVCpu);
++        break;
++    case FDP_DR6_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR6(pVCpu);
++        break;
++    case FDP_DR7_REGISTER:
++        *pRegisterValue = CPUMGetGuestDR7(pVCpu);
++        break;
++
++    case FDP_CS_REGISTER:
++        *pRegisterValue = CPUMGetGuestCS(pVCpu);
++        break;
++    case FDP_DS_REGISTER:
++        *pRegisterValue = CPUMGetGuestDS(pVCpu);
++        break;
++    case FDP_ES_REGISTER:
++        *pRegisterValue = CPUMGetGuestES(pVCpu);
++        break;
++    case FDP_FS_REGISTER:
++        *pRegisterValue = CPUMGetGuestFS(pVCpu);
++        break;
++    case FDP_GS_REGISTER:
++        *pRegisterValue = CPUMGetGuestGS(pVCpu);
++        break;
++    case FDP_SS_REGISTER:
++        *pRegisterValue = CPUMGetGuestSS(pVCpu);
++        break;
++    case FDP_RFLAGS_REGISTER:
++        *pRegisterValue = CPUMGetGuestEFlags(pVCpu);
++        break;
++    case FDP_GDTRB_REGISTER:
++    {
++        VBOXGDTR gdtr = {0, 0};
++        CPUMGetGuestGDTR(pVCpu, &gdtr);
++        *pRegisterValue = gdtr.pGdt;
++        break;
++    }
++    case FDP_GDTRL_REGISTER:
++    {
++        VBOXGDTR gdtr = {0, 0};
++        CPUMGetGuestGDTR(pVCpu, &gdtr);
++        *pRegisterValue = gdtr.cbGdt;
++        break;
++    }
++    case FDP_IDTRB_REGISTER:
++    {
++        uint16_t cbIDT;
++        RTGCPTR  GCPtrIDT = (RTGCPTR)CPUMGetGuestIDTR(pVCpu, &cbIDT);
++        *pRegisterValue = GCPtrIDT;
++        break;
++    }
++    case FDP_IDTRL_REGISTER:
++    {
++        uint16_t cbIDT;
++        RTGCPTR  GCPtrIDT = (RTGCPTR)CPUMGetGuestIDTR(pVCpu, &cbIDT);
++        *pRegisterValue = cbIDT;
++        break;
++    }
++    case FDP_LDTR_REGISTER:
++    {
++        uint64_t Ldtrb;
++        uint32_t Ldtrl;
++        *pRegisterValue = CPUMGetGuestLdtrEx(pVCpu, &Ldtrb, &Ldtrl);
++        break;
++    }
++    case FDP_LDTRB_REGISTER:
++    {
++        uint64_t Ldtrb;
++        uint32_t Ldtrl;
++        CPUMGetGuestLdtrEx(pVCpu, &Ldtrb, &Ldtrl);
++        *pRegisterValue = Ldtrb;
++        break;
++    }
++    case FDP_LDTRL_REGISTER:
++    {
++        uint64_t Ldtrb;
++        uint32_t Ldtrl;
++        CPUMGetGuestLdtrEx(pVCpu, &Ldtrb, &Ldtrl);
++        *pRegisterValue = Ldtrl;
++        break;
++    }
++    case FDP_TR_REGISTER:
++    {
++        *pRegisterValue = CPUMGetGuestTR(pVCpu, NULL);
++        break;
++    }
++    default:
++    {
++        *pRegisterValue = 0xBADBADBADBADBADB;
++        return false;
++    }
++    }
++    return true;
++}
++
++bool FDPVBOX_writeRegister(void* pUserHandle, uint32_t CpuId, FDP_Register RegisterId, uint64_t RegisterValue)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    PCPUMCTXCORE  pRegFrame = (PCPUMCTXCORE)CPUMGetGuestCtxCore(pVCpu);
++
++    FDP_CPU_CTX* pFdpCpuCtx = (FDP_CPU_CTX*)pVCpu->fdpstate.s.pCpuShm;
++
++    switch (RegisterId)
++    {
++    case FDP_RAX_REGISTER:
++        pRegFrame->rax = RegisterValue;
++        pFdpCpuCtx->rax = RegisterValue;
++        break;
++    case FDP_RBX_REGISTER:
++        pRegFrame->rbx = RegisterValue;
++        pFdpCpuCtx->rbx = RegisterValue;
++        break;
++    case FDP_RCX_REGISTER:
++        pRegFrame->rcx = RegisterValue;
++        pFdpCpuCtx->rcx = RegisterValue;
++        break;
++    case FDP_RDX_REGISTER:
++        pRegFrame->rdx = RegisterValue;
++        pFdpCpuCtx->rdx = RegisterValue;
++        break;
++    case FDP_R8_REGISTER:
++        pRegFrame->r8 = RegisterValue;
++        pFdpCpuCtx->r8 = RegisterValue;
++        break;
++    case FDP_R9_REGISTER:
++        pRegFrame->r9 = RegisterValue;
++        pFdpCpuCtx->r9 = RegisterValue;
++        break;
++    case FDP_R10_REGISTER:
++        pRegFrame->r10 = RegisterValue;
++        pFdpCpuCtx->r10 = RegisterValue;
++        break;
++    case FDP_R11_REGISTER:
++        pRegFrame->r11 = RegisterValue;
++        pFdpCpuCtx->r11 = RegisterValue;
++        break;
++    case FDP_R12_REGISTER:
++        pRegFrame->r12 = RegisterValue;
++        pFdpCpuCtx->r12 = RegisterValue;
++        break;
++    case FDP_R13_REGISTER:
++        pRegFrame->r13 = RegisterValue;
++        pFdpCpuCtx->r13 = RegisterValue;
++        break;
++    case FDP_R14_REGISTER:
++        pRegFrame->r14 = RegisterValue;
++        pFdpCpuCtx->r14 = RegisterValue;
++        break;
++    case FDP_R15_REGISTER:
++        pRegFrame->r15 = RegisterValue;
++        pFdpCpuCtx->r15 = RegisterValue;
++        break;
++    case FDP_RSP_REGISTER:
++        pRegFrame->rsp = RegisterValue;
++        pFdpCpuCtx->rsp = RegisterValue;
++        break;
++    case FDP_RBP_REGISTER:
++        pRegFrame->rbp = RegisterValue;
++        pFdpCpuCtx->rbp = RegisterValue;
++        break;
++    case FDP_RSI_REGISTER:
++        pRegFrame->rsi = RegisterValue;
++        pFdpCpuCtx->rsi = RegisterValue;
++        break;
++    case FDP_RDI_REGISTER:
++        pRegFrame->rdi = RegisterValue;
++        pFdpCpuCtx->rdi = RegisterValue;
++        break;
++    case FDP_RIP_REGISTER:
++        pRegFrame->rip = RegisterValue;
++        pFdpCpuCtx->rip = RegisterValue;
++        break;
++
++    //Invisible for Guest Debug Register
++    case FDP_DR0_REGISTER:
++        CPUMSetGuestDR0(pVCpu, RegisterValue);
++        break;
++    case FDP_DR1_REGISTER:
++        CPUMSetGuestDR1(pVCpu, RegisterValue);
++        break;
++    case FDP_DR2_REGISTER:
++        CPUMSetGuestDR2(pVCpu, RegisterValue);
++        break;
++    case FDP_DR3_REGISTER:
++        CPUMSetGuestDR3(pVCpu, RegisterValue);
++        break;
++    case FDP_DR6_REGISTER:
++        CPUMSetGuestDR6(pVCpu, RegisterValue);
++        break;
++    case FDP_DR7_REGISTER:
++        CPUMSetGuestDR7(pVCpu, RegisterValue);
++        break;
++
++    //Visible for Guest Debug Register
++    case FDP_VDR0_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[0] = RegisterValue;
++        break;
++    case FDP_VDR1_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[1] = RegisterValue;
++        break;
++    case FDP_VDR2_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[2] = RegisterValue;
++        break;
++    case FDP_VDR3_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[3] = RegisterValue;
++        break;
++    case FDP_VDR6_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[6] = RegisterValue;
++        break;
++    case FDP_VDR7_REGISTER:
++        pVCpu->fdpstate.s.aGuestDr[7] = RegisterValue;
++        break;
++
++    case FDP_CS_REGISTER:
++        CPUMSetGuestCS(pVCpu, RegisterValue);
++        break;
++    case FDP_DS_REGISTER:
++        CPUMSetGuestDS(pVCpu, RegisterValue);
++        break;
++    case FDP_ES_REGISTER:
++        CPUMSetGuestES(pVCpu, RegisterValue);
++        break;
++    case FDP_FS_REGISTER:
++        CPUMSetGuestFS(pVCpu, RegisterValue);
++        break;
++    case FDP_GS_REGISTER:
++        CPUMSetGuestGS(pVCpu, RegisterValue);
++        break;
++    case FDP_SS_REGISTER:
++        CPUMSetGuestSS(pVCpu, RegisterValue);
++        break;
++    case FDP_CR0_REGISTER:
++        CPUMSetGuestCR0(pVCpu, RegisterValue);
++        pFdpCpuCtx->cr0 = RegisterValue;
++        break;
++    case FDP_CR2_REGISTER:
++        CPUMSetGuestCR2(pVCpu, RegisterValue);
++        pFdpCpuCtx->cr3 = RegisterValue;
++        break;
++    case FDP_CR3_REGISTER:
++    {
++        CPUMSetGuestCR3(pVCpu, RegisterValue);
++        PGMFlushTLB(pVCpu, RegisterValue, 0);
++        pFdpCpuCtx->cr3 = RegisterValue;
++        break;
++    }
++    case FDP_CR4_REGISTER:
++        CPUMSetGuestCR4(pVCpu, RegisterValue);
++        pFdpCpuCtx->cr4 = RegisterValue;
++        break;
++    //case FDP_CR8_REGISTER: CPUMSetGuestCR8(pVCpu, RegisterValue); break;
++    case FDP_RFLAGS_REGISTER:
++        CPUMSetGuestEFlags(pVCpu, RegisterValue);
++        break;
++    default:
++        break;
++    }
++    return true;
++}
++
++bool FDPVBOX_virtualToPhysical(void* pUserHandle, uint32_t CpuId, uint64_t VirtualAddress, uint64_t* PhysicalAddress)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++    int    rc = PGMPhysGCPtr2GCPhys(pVCpu, VirtualAddress, PhysicalAddress);
++    if (RT_FAILURE(rc))
++    {
++        return false;
++    }
++    return true;
++}
++
++bool FDPVBOX_unsetBreakpoint(void* pUserHandle, uint8_t BreakpointId)
++{
++    Log1("UNSET_BP [%d] ! \n", BreakpointId);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    int                   rc = VMR3RemoveBreakpoint(myVBOXHandle->pUVM, BreakpointId);
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++bool FDPVBOX_getFxState64(void* pUserHandle, uint32_t CpuId, uint8_t* pDstBuffer, uint32_t* pDstSize)
++{
++    Log1("GET_FXSTATE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    PCPUMCTX    pCtx = CPUMQueryGuestCtxPtr(pVCpu);
++    PX86FXSTATE pFpuCtx = &pCtx->CTX_SUFF(pXState)->x87;
++    memcpy(pDstBuffer, pFpuCtx, sizeof(X86FXSTATE));
++    *pDstSize = sizeof(X86FXSTATE);
++    return true;
++}
++
++bool FDPVBOX_setFxState64(void* pUserHandle, uint32_t CpuId, uint8_t* pSrcBuffer, uint32_t uSrcSize)
++{
++    Log1("SET_FXSTATE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    PCPUMCTX    pCtx = CPUMQueryGuestCtxPtr(pVCpu);
++    PX86FXSTATE pFpuCtx = &pCtx->CTX_SUFF(pXState)->x87;
++    memcpy(pFpuCtx, pSrcBuffer, sizeof(X86FXSTATE));
++    return true;
++}
++
++bool FDPVBOX_readVirtualMemory(void* pUserHandle, uint32_t CpuId, uint64_t VirtualAddress, uint32_t ReadSize,
++                               uint8_t* pDstBuffer)
++{
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return false;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
++
++    int rc = 0;
++    rc = PGMPhysSimpleReadGCPtr(pVCpu, pDstBuffer, VirtualAddress, ReadSize);
++    if (RT_SUCCESS(rc))
++    {
++        return true;
++    }
++    return false;
++}
++
++int FDPVBOX_setBreakpoint(void* pUserHandle, uint32_t CpuId, FDP_BreakpointType BreakpointType, uint8_t BreakpointId,
++                          FDP_Access BreakpointAccessType, FDP_AddressType BreakpointAddressType,
++                          uint64_t BreakpointAddress, uint64_t BreakpointLength, uint64_t BreakpointCr3)
++{
++    Log1("SET_BREAKPOINT %p\n", BreakpointAddress);
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    if (CpuId >= VMR3GetCPUCount(myVBOXHandle->pUVM))
++    {
++        return -1;
++    }
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(myVBOXHandle->pUVM, CpuId);
+ 
++    BreakpointId = -1;
++    switch (BreakpointType)
++    {
++    case FDP_SOFTHBP:
++    {
++        BreakpointId =
++            VMR3AddSoftBreakpoint(myVBOXHandle->pUVM, pVCpu, BreakpointAddressType, BreakpointAddress, BreakpointCr3);
++        Log1("FDP_SOFTHBP[%d] %c %p %p\n", BreakpointId, BreakpointAddressType == 0x1 ? 'v' : 'p', BreakpointAddress,
++             BreakpointCr3);
++        break;
++    }
++    case FDP_PAGEHBP:
++    {
++        BreakpointId = VMR3AddPageBreakpoint(myVBOXHandle->pUVM, pVCpu, -1, BreakpointAccessType, BreakpointAddressType,
++                                             BreakpointAddress, BreakpointLength);
++        Log1("FDP_PAGEHBP[%d] %02x %p\n", BreakpointId, BreakpointAccessType, BreakpointAddress);
++        break;
++    }
++    case FDP_MSRHBP:
++    {
++        BreakpointId = VMR3AddMsrBreakpoint(myVBOXHandle->pUVM, BreakpointAccessType, BreakpointAddress);
++        Log1("FDP_MSRHBP[%d] %02x %p\n", BreakpointId, BreakpointAccessType, BreakpointAddress);
++        break;
++    }
++    case FDP_CRHBP:
++    {
++        BreakpointId = VMR3AddCrBreakpoint(myVBOXHandle->pUVM, BreakpointAccessType, BreakpointAddress);
++        Log1("FDP_CRHBP[%d] %02x %p\n", BreakpointId, BreakpointAccessType, BreakpointAddress);
++        break;
++    }
++    default:
++    {
++        Log1("Unknown BreakpointType!\n");
++        break;
++    }
++    }
++
++    return BreakpointId;
++}
++
++bool FDPVBOX_InjectInterrupt(void* pUserHandle, uint32_t CpuId, uint32_t InterruptionCode, uint32_t ErrorCode,
++                             uint64_t Cr2)
++{
++    Log1("InjectInterrupt\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    PUVM                  pUVM = myVBOXHandle->pUVM;
++
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(pUVM, 0);
++
++    VMR3InjectInterrupt(NULL, pVCpu, InterruptionCode, ErrorCode, Cr2);
++    return true;
++}
++
++bool FDPVBOX_Reboot(void* pUserHandle)
++{
++    Log1("REBOOT\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    PUVM                  pUVM = myVBOXHandle->pUVM;
++
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(pUVM, 0);
++
++    FDPVBOX_Pause(pUserHandle);
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        FDPVBOX_unsetBreakpoint(pUserHandle, BreakpointId);
++    }
++    CPUMSetGuestDR7(pVCpu, 0);
++
++    //Ask the EMT the Triple fault
++    pVCpu->fdpstate.s.bRebootRequired = true;
++
++    FDPVBOX_Resume(pUserHandle);
++
++    // FDPTODO: Wait for the startup
++    usleep(100 * 1000);
++
++    //Signal that the VM as changed, and what a change...
++    myVBOXHandle->pFDPServer->pSharedFDPSHM->stateChanged = true;
++
++    return true;
++}
++
++#include <VBox/vmm/ssm.h>
++#include <iprt/file.h>
++
++static DECLCALLBACK(int) nullProgressCallback(PUVM pUVM, unsigned uPercent, void* pvUser)
++{
++    NOREF(pUVM);
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(int) pfnMemoryWrite(void* pvUser, uint64_t offStream, const void* pvBuf, size_t cbToWrite)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    memcpy(pMemorySSM->pMemory + offStream, pvBuf, cbToWrite);
++    pMemorySSM->CurrentOffset = offStream;
++    if (offStream + cbToWrite > pMemorySSM->MaxOffset)
++    {
++        pMemorySSM->MaxOffset = offStream + cbToWrite;
++    }
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(int) pfnMemoryRead(void* pvUser, uint64_t offStream, void* pvBuf, size_t cbToRead, size_t* pcbRead)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    memcpy(pvBuf, pMemorySSM->pMemory + offStream, cbToRead);
++    *pcbRead = cbToRead;
++    pMemorySSM->CurrentOffset = offStream + cbToRead;
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(int) pfnMemorySeek(void* pvUser, int64_t offSeek, unsigned uMethod, uint64_t* poffActual)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    if (uMethod == RTFILE_SEEK_BEGIN)
++    {
++        pMemorySSM->CurrentOffset = offSeek;
++    }
++    if (uMethod == RTFILE_SEEK_END)
++    {
++        pMemorySSM->CurrentOffset = pMemorySSM->cbMemory - offSeek;
++    }
++    if (uMethod == RTFILE_SEEK_CURRENT)
++    {
++        pMemorySSM->CurrentOffset += offSeek;
++    }
++    *poffActual = pMemorySSM->CurrentOffset;
++    if (*poffActual > pMemorySSM->MaxOffset)
++    {
++        pMemorySSM->MaxOffset = *poffActual;
++    }
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(uint64_t) pfnMemoryTell(void* pvUser)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    return pMemorySSM->CurrentOffset;
++}
++
++static DECLCALLBACK(int) pfnMemorySize(void* pvUser, uint64_t* pcb)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    *pcb = pMemorySSM->MaxOffset;
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(int) pfnMemoryIsOk(void* pvUser)
++{
++    return VINF_SUCCESS;
++}
++
++static DECLCALLBACK(int) pfnMemoryClose(void* pvUser, bool fCancelled)
++{
++    MEMORY_SSM_T* pMemorySSM = (MEMORY_SSM_T*)pvUser;
++    pMemorySSM->CurrentOffset = 0;
++    pMemorySSM->MaxOffset = 0;
++    return VINF_SUCCESS;
++}
++
++static SSMSTRMOPS const g_ftmR3MemoryOps = {SSMSTRMOPS_VERSION, pfnMemoryWrite, pfnMemoryRead,
++                                            pfnMemorySeek,      pfnMemoryTell,  pfnMemorySize,
++                                            pfnMemoryIsOk,      pfnMemoryClose, SSMSTRMOPS_VERSION};
++
++bool FDPVBOX_Save(void* pUserHandle)
++{
++    Log1("SAVE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    PUVM                  pUVM = myVBOXHandle->pUVM;
++
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(pUVM, 0);
++
++    //Avoid Interrupt during save, we don't want Interrupt in our save state
++    pVCpu->fdpstate.s.bDisableInterrupt = true;
++
++    //Ask all CPU to suspend
++    printf("Save.FDPVBOX_Pause\n");
++    FDPVBOX_Pause(pUserHandle);
++
++    printf("Save.UsetBreakpoint\n");
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        FDPVBOX_unsetBreakpoint(pUserHandle, BreakpointId);
++    }
++    //Disable Hardware breakpoint
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR0_REGISTER, 0);
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR1_REGISTER, 0);
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR2_REGISTER, 0);
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR3_REGISTER, 0);
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR6_REGISTER, 0);
++    FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR7_REGISTER, 0);
++
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR0_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[0]);
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR1_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[1]);
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR2_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[2]);
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR3_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[3]);
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR6_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[6]);
++    FDPVBOX_readRegister(pUserHandle, 0, FDP_VDR7_REGISTER, &myVBOXHandle->aVisibleGuestDebugRegisterSave[7]);
++
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU pVCpuI = VMMR3GetCpuByIdU(pUVM, i);
++        pVCpuI->fdpstate.s.bSuspendRequired = true;
++    }
++
++    //Resume all CPU for suspend
++    printf("Save.FDPVBOX_Resume\n");
++    FDPVBOX_Resume(pUserHandle);
++
++    //Suspend all CPU
++    printf("Save.VMR3Suspend\n");
++    VMR3Suspend(pUVM, VMSUSPENDREASON_USER);
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU pVCpuI = VMMR3GetCpuByIdU(pUVM, i);
++        pVCpuI->fdpstate.s.bSuspendRequired = false;
++    }
++
++    //Alloc SaveState memory
++    if (myVBOXHandle->pMemorySSM->pMemory == NULL)
++    {
++        myVBOXHandle->pMemorySSM->cbMemory = MMR3PhysGetRamSizeU(pUVM);
++        myVBOXHandle->pMemorySSM->pMemory = (uint8_t*)malloc(myVBOXHandle->pMemorySSM->cbMemory);
++    }
++
++    //Set offset
++    myVBOXHandle->pMemorySSM->CurrentOffset = 0;
++    myVBOXHandle->pMemorySSM->MaxOffset = 0;
++
++    //Save state
++    printf("Save.VMR3SaveFT\n");
++    bool bSuspended = false;
++    VMR3SaveFT(pUVM, &g_ftmR3MemoryOps, (void*)myVBOXHandle->pMemorySSM, &bSuspended);
++
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU pVCpuI = VMMR3GetCpuByIdU(pUVM, i);
++        pVCpuI->fdpstate.s.bRestoreRequired = true;
++    }
++
++    printf("Save.VMR3Resume\n");
++    VMR3Resume(pUVM, VMRESUMEREASON_STATE_RESTORED);
++
++    printf("Save.FDPVBOX_Pause\n");
++    FDPVBOX_Pause(pUserHandle);
++
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU pVCpuI = VMMR3GetCpuByIdU(pUVM, i);
++        pVCpuI->fdpstate.s.bRestoreRequired = false;
++    }
++
++    pVCpu->fdpstate.s.bDisableInterrupt = false;
++
++    return true;
++}
++
++bool FDPVBOX_Restore(void* pUserHandle)
++{
++    Log1("RESTORE\n");
++    FDPVBOX_USERHANDLE_T* myVBOXHandle = (FDPVBOX_USERHANDLE_T*)pUserHandle;
++    PUVM                  pUVM = myVBOXHandle->pUVM;
++    int                   rc;
++    if (myVBOXHandle->pMemorySSM->pMemory != NULL)
++    {
++        PVMCPU pVCpu = VMMR3GetCpuByIdU(pUVM, 0);
++
++        //Avoid Interrupt during save, we don't want Interrupt in our save state
++        pVCpu->fdpstate.s.bDisableInterrupt = true;
++
++        printf("Restore.Pause\n");
++        FDPVBOX_Pause(pUserHandle);
++
++        printf("Restore.UsetBreakpoint\n");
++        for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++        {
++            FDPVBOX_unsetBreakpoint(pUserHandle, BreakpointId);
++        }
++        //Disable Hardware breakpoint
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR0_REGISTER, 0);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR1_REGISTER, 0);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR2_REGISTER, 0);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR3_REGISTER, 0);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR6_REGISTER, 0);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_DR7_REGISTER, 0);
++
++        printf("Restore.FDPVBOX_Resume\n");
++        //Force console client to reconnect
++        FDPVBOX_Resume(pUserHandle);
++
++        printf("Restore.VMR3Reset\n");
++        VMR3Reset(pUVM);
++
++        usleep(500 * 1000);
++
++        printf("Restore.VMR3Suspend\n");
++        rc = VMR3Suspend(pUVM, VMSUSPENDREASON_USER);
++
++        //rc = VMR3Suspend(pUVM, VMSUSPENDREASON_USER);
++        //printf("%d\n", rc);
++
++        printf("Restore.VMR3LoadFromStream\n");
++        VMR3LoadFromStream(pUVM, &g_ftmR3MemoryOps, (void*)myVBOXHandle->pMemorySSM, nullProgressCallback, NULL);
++
++        printf("Restore.VMR3Resume\n");
++        pVCpu->fdpstate.s.bRestoreRequired = true;
++        VMR3Resume(pUVM, VMRESUMEREASON_STATE_RESTORED);
++
++        printf("Restore.FDPVBOX_Pause\n");
++        FDPVBOX_Pause(pUserHandle);
++        pVCpu->fdpstate.s.bRestoreRequired = false;
++
++        //Restore visible for Guest Debug Register
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR0_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[0]);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR1_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[1]);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR2_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[2]);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR3_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[3]);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR6_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[6]);
++        FDPVBOX_writeRegister(pUserHandle, 0, FDP_VDR7_REGISTER, myVBOXHandle->aVisibleGuestDebugRegisterSave[7]);
++
++        pVCpu->fdpstate.s.bDisableInterrupt = false;
++
++        //printf("%d\n", VMR3ClearInterrupt(pUVM, NULL));
++
++        printf("Restore.Done!\n");
++        return true;
++    }
++
++    return false;
++}
++
++void* CreateSHM(const char* name, size_t size)
++{
++    int fd = shm_open(name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
++    if (fd == -1)
++    {
++        return NULL;
++    }
++
++    ftruncate(fd, size);
++
++    void* buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++    if (buf == MAP_FAILED)
++    {
++        shm_unlink(name);
++        close(fd);
++        return NULL;
++    }
++
++    close(fd);
++    return buf;
++}
++
++void* CreateCPUSHM(PUVM pUVM)
++{
++    void* pBuf;
++
++    char aCpuShmName[512] = {0};
++    strcpy(aCpuShmName, "CPU_");
++    strcat(aCpuShmName, VMR3GetName(pUVM));
++
++    pBuf = CreateSHM(aCpuShmName, sizeof(FDP_CPU_CTX));
++    if (pBuf == NULL)
++    {
++        return NULL;
++    }
++    //Clear SHM
++    memset((void*)pBuf, 0, sizeof(FDP_CPU_CTX));
++
++    return pBuf;
++}
++
++void* FDPServerThread(LPVOID lpParam)
++{
++    PUVM         pUVM = (PUVM)lpParam;
++    MEMORY_SSM_T MemorySSM;
++    MemorySSM.pMemory = NULL;
++    MemorySSM.CurrentOffset = 0;
++
++    FDP_SHM* pFDPServer = FDP_CreateSHM((char*)VMR3GetName(pUVM));
++    if (pFDPServer == NULL)
++    {
++        printf("FDP SHM creation failed !\n");
++        return NULL;
++    }
++
++    printf("FDP_CreateSHM OK\n");
++    FDPVBOX_USERHANDLE_T* pUserHandle = (FDPVBOX_USERHANDLE_T*)malloc(sizeof(FDPVBOX_USERHANDLE_T));
++    pUserHandle->pUVM = pUVM;
++    pUserHandle->pMemorySSM = &MemorySSM;
++    pUserHandle->pFDPServer = pFDPServer;
++
++    //Configure FDP Server Interface
++    FDP_SERVER_INTERFACE_T FDPServerInterface;
++    FDPServerInterface.pUserHandle = pUserHandle;
++
++    FDPServerInterface.pfnGetState = &FDPVBOX_getState;
++    FDPServerInterface.pfnReadRegister = &FDPVBOX_readRegister;
++    FDPServerInterface.pfnWriteRegister = &FDPVBOX_writeRegister;
++    FDPServerInterface.pfnWritePhysicalMemory = &FDPVBOX_writePhysicalMemory;
++    FDPServerInterface.pfnWriteVirtualMemory = &FDPVBOX_writeVirtualMemory;
++    FDPServerInterface.pfnGetMemorySize = &FDPVBOX_getMemorySize;
++    FDPServerInterface.pfnResume = &FDPVBOX_Resume;
++    FDPServerInterface.pfnSingleStep = &FDPVBOX_singleStep;
++    FDPServerInterface.pfnPause = &FDPVBOX_Pause;
++    FDPServerInterface.pfnReadMsr = &FDPVBOX_readMsr;
++    FDPServerInterface.pfnWriteMsr = &FDPVBOX_writeMsr;
++    FDPServerInterface.pfnGetCpuCount = &FDPVBOX_getCpuCount;
++    FDPServerInterface.pfnGetCpuState = &FDPVBOX_getCpuState;
++    FDPServerInterface.pfnVirtualToPhysical = &FDPVBOX_virtualToPhysical;
++    FDPServerInterface.pfnUnsetBreakpoint = &FDPVBOX_unsetBreakpoint;
++    FDPServerInterface.pfnGetFxState64 = &FDPVBOX_getFxState64;
++    FDPServerInterface.pfnSetFxState64 = &FDPVBOX_setFxState64;
++    FDPServerInterface.pfnReadVirtualMemory = &FDPVBOX_readVirtualMemory;
++    FDPServerInterface.pfnReadPhysicalMemory = &FDPVBOX_readPhysicalMemory;
++    FDPServerInterface.pfnSetBreakpoint = &FDPVBOX_setBreakpoint;
++    FDPServerInterface.pfnReadPhysicalMemory = &FDPVBOX_readPhysicalMemory;
++    FDPServerInterface.pfnSave = &FDPVBOX_Save;
++    FDPServerInterface.pfnRestore = &FDPVBOX_Restore;
++    FDPServerInterface.pfnReboot = &FDPVBOX_Reboot;
++    FDPServerInterface.pfnInjectInterrupt = &FDPVBOX_InjectInterrupt;
++
++    if (FDP_SetFDPServer(pFDPServer, &FDPServerInterface) == false)
++    {
++        printf("Failed to FDP_SerFDPServer\n");
++        return NULL;
++    }
++
++    printf("FDP_SetFDPServer OK\n");
++
++    VMR3SetFDPShm(pUVM, pFDPServer);
++
++    printf("VMR3SetFDPShm OK\n");
++
++    if (FDP_ServerLoop(pFDPServer) == false)
++    {
++        printf("Failed to FDP_ServerLoop\n");
++        return NULL;
++    }
++
++    if (pUserHandle != NULL)
++    {
++        free(pUserHandle);
++    }
++
++    return NULL;
++}
++/*ENDFDPCODE*/
+ 
+ /**
+  * Checks if there is input.
+@@ -215,6 +1338,19 @@ static DECLCALLBACK(int) dbgcTcpConnection(RTSOCKET Sock, void *pvUser)
+  */
+ DBGDECL(int)    DBGCTcpCreate(PUVM pUVM, void **ppvData)
+ {
++    /*FDPCODE*/
++    PVMCPU pVCpu = VMMR3GetCpuByIdU(pUVM, 0);
++    void* pCpuShm = CreateCPUSHM(pUVM);
++    pVCpu->fdpstate.s.pCpuShm = pCpuShm;
++    if (pCpuShm == NULL)
++    {
++        printf("Failed to CreateCpuShm\n");
++        return -1;
++    }
++
++    pthread_t t;
++    pthread_create(&t, NULL, FDPServerThread, pUVM);
++    /*ENDFDPCODE*/
+     /*
+      * Check what the configuration says.
+      */
+diff --git a/src/VBox/Debugger/Makefile.kmk b/src/VBox/Debugger/Makefile.kmk
+index af27bc38..8abc3ead 100644
+--- a/src/VBox/Debugger/Makefile.kmk
++++ b/src/VBox/Debugger/Makefile.kmk
+@@ -33,7 +33,9 @@ endif # VBOX_WITH_DEBUGGER
+ # Debugger library - linked into VBoxVMM.
+ #
+ Debugger_TEMPLATE  = VBOXR3
+-Debugger_DEFS      = IN_VMM_R3 IN_DBG_R3 IN_DIS
++# FDPCODE Include USING_VMM_COMMON_DEFS
++Debugger_DEFS      = IN_VMM_R3 IN_DBG_R3 IN_DIS USING_VMM_COMMON_DEFS
++# ENDFDPCODE
+ ifneq ($(KBUILD_TYPE),release)
+  Debugger_DEFS    += VBOX_WITH_DEBUGGER_TCP_BY_DEFAULT
+ endif
+@@ -146,3 +148,8 @@ endif # Qt
+ 
+ include $(FILE_KBUILD_SUB_FOOTER)
+ 
++# FDPCODE
++Debugger_INCS       += $(FDPINC)
++Debugger_LIBS       += FDP
++Debugger_LDFLAGS    += -L$(FDPLIB)
++# ENDFDPCODE
+diff --git a/src/VBox/HostDrivers/Support/Makefile.kmk b/src/VBox/HostDrivers/Support/Makefile.kmk
+index f2bed6e7..9a6d9853 100644
+--- a/src/VBox/HostDrivers/Support/Makefile.kmk
++++ b/src/VBox/HostDrivers/Support/Makefile.kmk
+@@ -644,7 +644,9 @@ if1of ($(KBUILD_TARGET), darwin freebsd solaris win)
+   VBoxDrv_ASDEFS         += VBOX_WITH_HARDENING
+  endif
+  ifdef VBOX_WITH_RAM_IN_KERNEL
+-  VBoxDrv_DEFS           += VBOX_WITHOUT_EFLAGS_AC_SET_IN_VBOXDRV IPRT_WITHOUT_EFLAGS_AC_PRESERVING
++  # FDPCODE Remove the usage of VBOX_WITHOUT_EFLAGS_AC_SET_IN_VBOXDRV to fix SMAP-related panics on newer MacBooks
++  VBoxDrv_DEFS           += IPRT_WITHOUT_EFLAGS_AC_PRESERVING
++  # ENDFDPCODE
+  else if ($(VBOX_VERSION_BUILD) % 2) == 1
+   VBoxDrv_DEFS           += VBOX_WITH_EFLAGS_AC_SET_IN_VBOXDRV IPRT_WITH_EFLAGS_AC_PRESERVING
+  endif
+@@ -768,13 +770,15 @@ if1of ($(KBUILD_TARGET), linux freebsd)
+ 		$$(if $$(eq $$(Support/$(KBUILD_TARGET)/Makefile_VBOX_RAM_IN_KERNEL),$$(VBOX_WITH_RAM_IN_KERNEL)),,FORCE) \
+ 		| $$(dir $$@)
+ 	$(call MSG_TOOL,Creating,,$@)
++    # FDPCODE Remove the usage of VBOX_WITHOUT_EFLAGS_AC_SET_IN_VBOXDRV to fix SMAP-related panics on newer MacBooks
+ 	$(QUIET)$(SED) -e "" \
+ 		$(if-expr !defined(VBOX_WITH_HARDENING)   ,-e "s;VBOX_WITH_HARDENING;;g",) \
+ 		$(if-expr ($(VBOX_VERSION_BUILD) % 2) == 0 || defined(VBOX_WITH_RAM_IN_KERNEL) \
+ 		 , -e "s;VBOX_WITH_EFLAGS_AC_SET_IN_VBOXDRV;;g" -e "s;IPRT_WITH_EFLAGS_AC_PRESERVING;;g",) \
+ 		$(if-expr !defined(VBOX_WITH_RAM_IN_KERNEL) \
+-		 , -e 's;VBOX_WITHOUT_EFLAGS_AC_SET_IN_VBOXDRV;;g' -e 's;IPRT_WITHOUT_EFLAGS_AC_PRESERVING;;g',) \
++		 , -e 's;;;g' -e 's;IPRT_WITHOUT_EFLAGS_AC_PRESERVING;;g',) \
+ 		--output $@ $<
++	# ENDFDPCODE
+ 	%$(QUIET2)$(APPEND) -t '$(PATH_TARGET)/vboxdrv-src-1.dep' \
+ 		'Support/$(KBUILD_TARGET)/Makefile_VBOX_HARDENED=$(VBOX_WITH_HARDENING)' \
+ 		'Support/$(KBUILD_TARGET)/Makefile_VBOX_RAM_IN_KERNEL=$(VBOX_WITH_RAM_IN_KERNEL)'
+diff --git a/src/VBox/Main/Makefile.kmk b/src/VBox/Main/Makefile.kmk
+index 6eb28da5..f3588a5c 100644
+--- a/src/VBox/Main/Makefile.kmk
++++ b/src/VBox/Main/Makefile.kmk
+@@ -1695,3 +1695,8 @@ testapiwrappers:: \
+ updatenls::
+ 	$(VBOX_LUPDATE) $(VBoxSVC_SOURCES) $(VBoxSVC_VBOX_HEADERS) -ts $(VBoxSVC_VBOX_TRANSLATIONS)
+ 	$(VBOX_LUPDATE) $(VBoxC_SOURCES) $(VBoxC_VBOX_HEADERS) -ts $(VBoxC_VBOX_TRANSLATIONS)
++
++# FDPCODE
++VBoxAPIWrap_LIBS    += FDP
++VBoxAPIWrap_LDFLAGS += -L$(FDPLIB)
++# ENDFDPCODE
+diff --git a/src/VBox/Runtime/Makefile.kmk b/src/VBox/Runtime/Makefile.kmk
+index dd883aa9..8f7a1ec3 100644
+--- a/src/VBox/Runtime/Makefile.kmk
++++ b/src/VBox/Runtime/Makefile.kmk
+@@ -4016,3 +4016,8 @@ taf-template.o taf-template.obj: taf-core.o taf-asn1-decoder.o taf-sanity.o taf-
+ tsp-template.o tsp-template.obj: tsp-core.o tsp-asn1-decoder.o tsp-sanity.o tsp-init.o
+ x509-template.o x509-template.obj: x509-core.o x509-asn1-decoder.o x509-sanity.o x509-init.o
+ pkcs7-template.o pkcs7-template.obj: pkcs7-core.o pkcs7-asn1-decoder.o pkcs7-sanity.o pkcs7-init.o
++
++# FDPCODE
++VBoxRT_LIBS     += FDP
++VBoxRT_LDFLAGS  += -L$(FDPLIB)
++# ENDFDPCODE
+diff --git a/src/VBox/Runtime/common/string/memcpy.asm b/src/VBox/Runtime/common/string/memcpy.asm
+index a53fa159..102c0ead 100644
+--- a/src/VBox/Runtime/common/string/memcpy.asm
++++ b/src/VBox/Runtime/common/string/memcpy.asm
+@@ -33,7 +33,8 @@ BEGINCODE
+ ; @param    pvSrc   gcc: rsi  msc: rdx  x86:[esp+8]   wcall: edx
+ ; @param    cb      gcc: rdx  msc: r8   x86:[esp+0ch] wcall: ebx
+ %ifdef IN_RING0_DRV_ON_DARWIN
+-global NAME(memcpy):private_extern
++; FDPCODE Remove private_extern to fix multiple memcpy symbols in drivers
++; ENDFDPCODE
+ NAME(memcpy):
+ %else
+ RT_NOCRT_BEGINPROC memcpy
+diff --git a/src/VBox/VMM/Makefile.kmk b/src/VBox/VMM/Makefile.kmk
+index cc3dc8c7..7ef7958c 100644
+--- a/src/VBox/VMM/Makefile.kmk
++++ b/src/VBox/VMM/Makefile.kmk
+@@ -773,3 +773,10 @@ IEMAllCImplVmxInstr.cpp.o          IEMAllCImplVmxInstr.cpp.obj: IEMAll.o
+ # Alias the NEM template to the objects where it is used:
+ NEMAllNativeTemplate-win.cpp.o:    NEMR3Native-win.o NEMR0Native-win.o
+ 
++# FDPCODE
++VBoxVMM_INCS    += $(FDPINC)
++VBoxVMM_LIBS    += FDP
++VBoxVMM_LDFLAGS += -L$(FDPLIB)
++
++VMMR0_INCS      += $(FDPINC)
++# ENDFDPCODE
+diff --git a/src/VBox/VMM/VMMAll/HMAll.cpp b/src/VBox/VMM/VMMAll/HMAll.cpp
+index 5ad8c343..f28ebf0a 100644
+--- a/src/VBox/VMM/VMMAll/HMAll.cpp
++++ b/src/VBox/VMM/VMMAll/HMAll.cpp
+@@ -512,6 +512,27 @@ static void hmPokeCpuForTlbFlush(PVMCPU pVCpu, bool fAccountFlushStat)
+         STAM_COUNTER_INC(&pVCpu->hm.s.StatFlushPageManual);
+ }
+ 
++/*FDPCODE*/
++//Ensure that all CPU are paused !
++#include <VBox/vmm/uvm.h>
++VMM_INT_DECL(int)
++HMFlushTLBOnAllVCpus2(PVMCPUCC pVCpu)
++{
++#ifndef IN_RING0
++    PVM pVM = pVCpu->CTX_SUFF(pVM);
++
++    // FDPTODO
++    for (VMCPUID idCpu = 0; idCpu < pVM->pUVM->cCpus; idCpu++)
++    {
++        PVMCPU pVCpuI = pVM->pUVM->aCpus[idCpu].pVCpu;
++        HMFlushTlb(pVCpuI);
++        VMCPU_FF_SET(pVCpuI, VMCPU_FF_TLB_FLUSH);
++        hmPokeCpuForTlbFlush(pVCpuI, true /* fAccountFlushStat */);
++    }
++#endif
++    return VINF_SUCCESS;
++}
++/*ENDFDPCODE*/
+ 
+ /**
+  * Invalidates a guest page on all VCPUs.
+diff --git a/src/VBox/VMM/VMMAll/PGMAll.cpp b/src/VBox/VMM/VMMAll/PGMAll.cpp
+index 6a06bb55..25bef946 100644
+--- a/src/VBox/VMM/VMMAll/PGMAll.cpp
++++ b/src/VBox/VMM/VMMAll/PGMAll.cpp
+@@ -1795,6 +1795,296 @@ static int pgmShwGetEPTPDPtr(PVMCPUCC pVCpu, RTGCPTR64 GCPtr, PEPTPDPT *ppPdpt,
+     return VINF_SUCCESS;
+ }
+ 
++/*FDPCODE*/
++VMMDECL(int)
++PGMShwGetHCPage(PVMCPUCC pVCpu, uint64_t GCPhys, uint64_t* HCPhys)
++{
++    PEPTPDPT ppPdpt;
++    PEPTPD   pShwPD;
++    int      rc;
++    PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++    pgmLock(pVM);
++
++    const unsigned iPd = ((GCPhys >> SHW_PD_SHIFT) & SHW_PD_MASK);
++    rc = pgmShwGetEPTPDPtr(pVCpu, GCPhys, &ppPdpt, &pShwPD);
++    EPTPDE* Pde;
++    Pde = &pShwPD->a[iPd];
++
++    if (Pde->n.u1Size == 1)
++    {  //2M
++        uint64_t test = *((uint64_t*)&Pde->b);
++        *HCPhys = (test & 0xFFFFFFFFFFE00000);
++    }
++    else
++    {  //4K
++        PSHWPT pPT;
++        rc = PGM_HCPHYS_2_PTR(pVM, pVCpu, Pde->u & SHW_PDE_PG_MASK, &pPT);
++        if (RT_SUCCESS(rc))
++        {
++            const unsigned iPt = (GCPhys >> SHW_PT_SHIFT) & SHW_PT_MASK;
++            EPTPTE*        Pte = (EPTPTE*)&pPT->a[iPt];
++
++            uint64_t test = *((uint64_t*)&Pte->n);
++            *HCPhys = (test & 0xFFFFFFFFFFFFF000);
++        }
++    }
++    pgmUnlock(pVM);
++    return rc;
++}
++
++void logRelPDE(EPTPDE* Pde)
++{
++    LogRel(("Pde->b.u1Present %p\n", Pde->b.u1Present));
++    LogRel(("Pde->b.u1Write %p\n", Pde->b.u1Write));
++    LogRel(("Pde->b.u1Execute %p\n", Pde->b.u1Execute));
++    LogRel(("Pde->b.u3EMT %p\n", Pde->b.u3EMT));
++    LogRel(("Pde->b.u1IgnorePAT %p\n", Pde->b.u1IgnorePAT));
++    LogRel(("Pde->b.u1Size %p\n", Pde->b.u1Size));
++    LogRel(("Pde->b.u4Available %p\n", Pde->b.u4Available));
++    LogRel(("Pde->b.u9Reserved %p\n", Pde->b.u9Reserved));
++    LogRel(("Pde->b.u31PhysAddr %p\n", Pde->b.u31PhysAddr));
++    LogRel(("Pde->b.u12Available %p\n", Pde->b.u12Available));
++}
++
++void logRelPTE(EPTPTE* Pte)
++{
++    LogRel(("------------------------------------\n"));
++    LogRel(("Pte->n.u1Present %p\n", Pte->n.u1Present));
++    LogRel(("Pte->n.u1Write %p\n", Pte->n.u1Write));
++    LogRel(("Pte->n.u1Execute %p\n", Pte->n.u1Execute));
++    LogRel(("------------------------------------\n"));
++}
++
++VMMDECL(int)
++PGMShwSetHCPage(PVMCPUCC pVCpu, uint64_t GCPhys, uint64_t HCPhys)
++{
++    PEPTPDPT ppPdpt;
++    PEPTPD   pShwPD;
++    int      rc;
++    PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++    pgmLock(pVM);
++
++    const unsigned iPd = ((GCPhys >> SHW_PD_SHIFT) & SHW_PD_MASK);
++    rc = pgmShwGetEPTPDPtr(pVCpu, GCPhys, &ppPdpt, &pShwPD);
++    EPTPDE* Pde;
++    Pde = &pShwPD->a[iPd];
++
++    if (Pde->n.u1Size == 1)
++    {  //2M
++        Pde->au64[0] = (Pde->au64[0] & 0x1FFFFF) | (HCPhys & 0xFFFFFFFFFFE00000);
++    }
++    else
++    {  //4K
++        PSHWPT pPT;
++        rc = PGM_HCPHYS_2_PTR(pVM, pVCpu, Pde->u & SHW_PDE_PG_MASK, &pPT);
++        if (RT_SUCCESS(rc))
++        {
++            const unsigned iPt = (GCPhys >> SHW_PT_SHIFT) & SHW_PT_MASK;
++            EPTPTE*        Pte = (EPTPTE*)&pPT->a[iPt];
++
++            Pte->au64[0] = (Pte->au64[0] & 0xFFF) | (HCPhys & 0xFFFFFFFFFFFFF000);
++        }
++    }
++
++    pgmUnlock(pVM);
++    return rc;
++}
++
++VMMDECL(int)
++PGMShwChangeFlags(PVMCPUCC pVCpu, uint64_t GCPhys, uint8_t orPresent, uint8_t andPresent, uint8_t orWrite,
++                  uint8_t andWrite, uint8_t orExecute, uint8_t andExecute)
++{
++    PEPTPDPT ppPdpt;
++    PEPTPD   pShwPD;
++    int      rc;
++    PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++    pgmLock(pVM);
++
++    const unsigned iPd = ((GCPhys >> SHW_PD_SHIFT) & SHW_PD_MASK);
++    rc = pgmShwGetEPTPDPtr(pVCpu, GCPhys, &ppPdpt, &pShwPD);
++    EPTPDE* Pde;
++    Pde = &pShwPD->a[iPd];
++
++    if (Pde->n.u1Size == 1)
++    {  //2M
++        Pde->b.u1Present = (Pde->b.u1Present | orPresent) & andPresent;
++        Pde->b.u1Write = (Pde->b.u1Write | orWrite) & andWrite;
++        Pde->b.u1Execute = (Pde->b.u1Execute | orExecute) & andExecute;
++    }
++    else
++    {  //4K
++        PSHWPT pPT;
++        rc = PGM_HCPHYS_2_PTR(pVM, pVCpu, Pde->u & SHW_PDE_PG_MASK, &pPT);
++        if (RT_SUCCESS(rc))
++        {
++            const unsigned iPt = (GCPhys >> SHW_PT_SHIFT) & SHW_PT_MASK;
++            EPTPTE*        Pte = (EPTPTE*)&pPT->a[iPt];
++
++            Pte->n.u1Present = (Pte->n.u1Present | orPresent) & andPresent;
++            Pte->n.u1Write = (Pte->n.u1Write | orWrite) & andWrite;
++            Pte->n.u1Execute = (Pte->n.u1Execute | orExecute) & andExecute;
++        }
++    }
++
++    pgmUnlock(pVM);
++    return rc;
++}
++
++#define MEMORY_SIZE 0x80000000
++
++VMMDECL(int)
++PGMShwSaveRights(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    PEPTPDPT ppPdpt;
++    PEPTPD   pShwPD;
++    PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++    pgmLock(pVM);
++
++    const unsigned iPd = ((GCPhys >> SHW_PD_SHIFT) & SHW_PD_MASK);
++    int            rc = pgmShwGetEPTPDPtr(pVCpu, GCPhys, &ppPdpt, &pShwPD);
++    EPTPDE*        Pde;
++    Pde = &pShwPD->a[iPd];
++
++    if (Pde->n.u1Size == 1)
++    {  //2M
++        // FDPTODO !!!!
++    }
++    else
++    {  //4K
++        PSHWPT pPT;
++        rc = PGM_HCPHYS_2_PTR(pVM, pVCpu, Pde->u & SHW_PDE_PG_MASK, &pPT);
++        if (RT_SUCCESS(rc))
++        {
++            const unsigned iPt = (GCPhys >> SHW_PT_SHIFT) & SHW_PT_MASK;
++            EPTPTE*        pPte = (EPTPTE*)&pPT->a[iPt];
++
++            uint32_t PfnIndex = ((GCPhys & X86_PAGE_4K_BASE_MASK) >> X86_PAGE_4K_SHIFT);
++
++            PfnEntrie_t* pTmpPfnEntrie;
++#ifdef IN_RING0
++            pTmpPfnEntrie = pVM->fdpstate.s.pPfnTableR0;
++#else
++            pTmpPfnEntrie = pVM->fdpstate.s.pPfnTableR3;
++#endif
++            pTmpPfnEntrie[PfnIndex].u.u1Present = pPte->n.u1Present;
++            pTmpPfnEntrie[PfnIndex].u.u1Write = pPte->n.u1Write;
++            pTmpPfnEntrie[PfnIndex].u.u1Execute = pPte->n.u1Execute;
++
++            //logRelPTE(Pte);
++        }
++    }
++
++    pgmUnlock(pVM);
++    return rc;
++}
++
++VMMDECL(int)
++PGMShwRestoreRights(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    if (GCPhys < MEMORY_SIZE)
++    {
++        PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++        uint32_t PfnIndex = ((GCPhys & X86_PAGE_4K_BASE_MASK) >> X86_PAGE_4K_SHIFT);
++
++        PfnEntrie_t* tmpPfnEntrie;
++#ifdef IN_RING0
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR0;
++#else
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR3;
++#endif
++        PGMShwChangeFlags(pVCpu, GCPhys, tmpPfnEntrie[PfnIndex].u.u1Present, tmpPfnEntrie[PfnIndex].u.u1Present,
++                          tmpPfnEntrie[PfnIndex].u.u1Write, tmpPfnEntrie[PfnIndex].u.u1Write,
++                          tmpPfnEntrie[PfnIndex].u.u1Execute, tmpPfnEntrie[PfnIndex].u.u1Execute);
++    }
++
++    return VINF_SUCCESS;
++}
++
++VMMDECL(int)
++PGMShwSetBreakable(PVMCPUCC pVCpu, uint64_t GCPhys, bool Breakable)
++{
++    if (GCPhys < MEMORY_SIZE)
++    {
++        PVMCC    pVM = pVCpu->CTX_SUFF(pVM);
++        uint32_t PfnIndex = ((GCPhys & X86_PAGE_4K_BASE_MASK) >> X86_PAGE_4K_SHIFT);
++
++        PfnEntrie_t* tmpPfnEntrie;
++#ifdef IN_RING0
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR0;
++        // LogRel(("RING 0 PGMShwSetBreakable tmpPfnEntrie=%p PfnIndex=%p GCPhys=%p\n", tmpPfnEntrie, PfnIndex, GCPhys));
++#else
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR3;
++        // LogRel(("RING 3 PGMShwSetBreakable tmpPfnEntrie=%p PfnIndex=%p GCPhys=%p\n", tmpPfnEntrie, PfnIndex, GCPhys));
++#endif
++        tmpPfnEntrie[PfnIndex].u.u1Breakable = Breakable;
++    }
++    return VINF_SUCCESS;
++}
++
++VMMDECL(bool)
++PGMShwIsBreakable(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    PVMCC pVM = pVCpu->CTX_SUFF(pVM);
++    if (GCPhys < MEMORY_SIZE)
++    {
++        uint32_t     PfnIndex = ((GCPhys & X86_PAGE_4K_BASE_MASK) >> X86_PAGE_4K_SHIFT);
++        PfnEntrie_t* tmpPfnEntrie;
++#ifdef IN_RING0
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR0;
++#else
++        tmpPfnEntrie = pVM->fdpstate.s.pPfnTableR3;
++#endif
++        //LogRel(("PGMShwIsBreakable %p PfnTable[%d].u1Breakable %s\n", GCPhys, PfnIndex, tmpPfnEntrie[PfnIndex].u.u1Breakable ? "true" : "false"));
++        return tmpPfnEntrie[PfnIndex].u.u1Breakable;
++    }
++    return false;
++}
++
++VMMDECL(int)
++PGMShwNoPresent(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 0, 0, 0, 1, 0, 1);
++}
++
++VMMDECL(int)
++PGMShwPresent(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 1, 1, 0, 1, 0, 1);
++}
++
++VMMDECL(int)
++PGMShwNoWrite(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 0, 1, 0, 0, 0, 1);
++}
++
++VMMDECL(int)
++PGMShwWrite(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 0, 1, 1, 1, 0, 1);
++}
++
++VMMDECL(int)
++PGMShwNoExecute(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 0, 1, 0, 1, 0, 0);
++}
++
++VMMDECL(int)
++PGMShwExecute(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++    return PGMShwChangeFlags(pVCpu, GCPhys, 0, 1, 0, 1, 1, 1);
++}
++
++VMMDECL(int)
++PGMShwInvalidate(PVMCPUCC pVCpu, uint64_t GCPhys)
++{
++#ifndef IN_RING0
++    HMFlushTLBOnAllVCpus2(pVCpu);
++#endif
++    return VINF_SUCCESS;
++}
++/*ENDFDPCODE*/
+ 
+ #ifdef IN_RING0
+ /**
+diff --git a/src/VBox/VMM/VMMAll/VMMAll.cpp b/src/VBox/VMM/VMMAll/VMMAll.cpp
+index e827e84f..bf0002f8 100644
+--- a/src/VBox/VMM/VMMAll/VMMAll.cpp
++++ b/src/VBox/VMM/VMMAll/VMMAll.cpp
+@@ -368,3 +368,57 @@ uint32_t vmmGetBuildType(void)
+     return uRet;
+ }
+ 
++/*FDPCODE*/
++VMM_INT_DECL(bool)
++VMMMatchBreakpointId(PVM pVM, int BreakpointId, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess)
++{
++    if (BreakpointId >= 0 || BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID)
++    {
++        BreakpointEntrie_t* TempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (TempBreakpointEntrie->breakpointActivated && TempBreakpointEntrie->breakpointType == BreakpointType &&
++            (TempBreakpointEntrie->breakpointAccessType & BreakpointAccess))
++        {
++            for (uint64_t j = 0; j < TempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                if (GCPhys >= TempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start &&
++                    GCPhys < TempBreakpointEntrie->breakpointGCPhysAreaTable[j].End)
++                {
++                    return true;
++                }
++            }
++        }
++    }
++    return false;
++}
++
++VMM_INT_DECL(int)
++VMMGetBreakpointId(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess)
++{
++    for (int i = 0; i <= FDPVBOX_MAX_BREAKPOINT_ID; i++)
++    {
++        if (VMMMatchBreakpointId(pVM, i, GCPhys, BreakpointType, BreakpointAccess))
++            return i;
++    }
++    return -1;
++}
++
++VMM_INT_DECL(int)
++VMMGetBreakpointIdFromPage(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType)
++{
++    GCPhys = GCPhys & ~(_4K - 1);
++    for (int i = 0; i <= FDPVBOX_MAX_BREAKPOINT_ID; i++)
++    {
++        if (pVM->bp.l[i].breakpointActivated && pVM->bp.l[i].breakpointType == BreakpointType)
++        {
++            for (uint64_t j = 0; j < pVM->bp.l[i].breakpointGCPhysAreaCount; j++)
++            {
++                if ((GCPhys & ~(_4K - 1)) == (pVM->bp.l[i].breakpointGCPhysAreaTable[j].Start & ~(_4K - 1)))
++                {
++                    return i;
++                }
++            }
++        }
++    }
++    return -1;
++}
++/*ENDFDPCODE*/
+diff --git a/src/VBox/VMM/VMMR0/GVMMR0.cpp b/src/VBox/VMM/VMMR0/GVMMR0.cpp
+index 2de316d5..a3bcfd31 100644
+--- a/src/VBox/VMM/VMMR0/GVMMR0.cpp
++++ b/src/VBox/VMM/VMMR0/GVMMR0.cpp
+@@ -909,6 +909,30 @@ GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, uint32_t cCpus, PGVM *pp
+                         IOMR0InitPerVMData(pGVM);
+                         if (RT_SUCCESS(rc) && RT_SUCCESS(rc2))
+                         {
++                            /*FDPCODE*/
++                            RTR0MEMOBJ PfnTableMemObj;
++                            rc = RTR0MemObjAllocPage(&PfnTableMemObj, sizeof(PfnEntrie_t) * 512 * 1024, false /* fExecutable */);
++                            if (RT_SUCCESS(rc))
++                            {
++                                pGVM->fdpstate.s.pPfnTableR0 = (PfnEntrie_t*)RTR0MemObjAddress(PfnTableMemObj);
++                                RTR0MEMOBJ PfnTableMapObj;
++                                rc = RTR0MemObjMapUser(&PfnTableMapObj, PfnTableMemObj, (RTR3PTR)-1, 0, RTMEM_PROT_READ | RTMEM_PROT_WRITE,
++                                                    NIL_RTR0PROCESS);
++                                if (RT_SUCCESS(rc))
++                                {
++                                    pGVM->fdpstate.s.pPfnTableR3 = (PfnEntrie_t*)RTR0MemObjAddressR3(PfnTableMapObj);
++                                }
++                                else
++                                {
++                                    return -1;
++                                }
++                            }
++                            else
++                            {
++                                return -1;
++                            }
++                            /*ENDFDPCODE*/
++
+                             /*
+                              * Allocate page array.
+                              * This currently have to be made available to ring-3, but this is should change eventually.
+diff --git a/src/VBox/VMM/VMMR0/HMVMXR0.cpp b/src/VBox/VMM/VMMR0/HMVMXR0.cpp
+index 7120e3b7..2254a704 100644
+--- a/src/VBox/VMM/VMMR0/HMVMXR0.cpp
++++ b/src/VBox/VMM/VMMR0/HMVMXR0.cpp
+@@ -41,6 +41,45 @@
+ #include "HMVMXR0.h"
+ #include "dtrace/VBoxVMM.h"
+ 
++/*FDPCODE*/
++#include <FDP.h>
++#include <FDP_structs.h>
++#include <iprt/spinlock.h>
++
++// FDPTODO: Move this in VMMALL as there is a copy in VMMR3
++void UpdateFdpCpuCtx(PVMCPU pVCpu)
++{
++    PCCPUMCTXCORE pCtxCore = CPUMGetGuestCtxCore(pVCpu);
++    FDP_CPU_CTX*  pFdpCpuCtx = (FDP_CPU_CTX*)pVCpu->fdpstate.s.pCpuShm;
++    if (pFdpCpuCtx == NULL) {
++        LogRel(("[FDPDEBUG] UpdateFdpCpuCtx(): pFdpCpuCtx == NULL, shouldn't happen?!\n"));
++        return;
++    }
++
++    pFdpCpuCtx->rip = pCtxCore->rip;
++    pFdpCpuCtx->rax = pCtxCore->rax;
++    pFdpCpuCtx->rcx = pCtxCore->rcx;
++    pFdpCpuCtx->rdx = pCtxCore->rdx;
++    pFdpCpuCtx->rbx = pCtxCore->rbx;
++    pFdpCpuCtx->rsp = pCtxCore->rsp;
++    pFdpCpuCtx->rbp = pCtxCore->rbp;
++    pFdpCpuCtx->rsi = pCtxCore->rsi;
++    pFdpCpuCtx->rdi = pCtxCore->rdi;
++    pFdpCpuCtx->r8 = pCtxCore->r8;
++    pFdpCpuCtx->r9 = pCtxCore->r9;
++    pFdpCpuCtx->r10 = pCtxCore->r10;
++    pFdpCpuCtx->r11 = pCtxCore->r11;
++    pFdpCpuCtx->r12 = pCtxCore->r12;
++    pFdpCpuCtx->r13 = pCtxCore->r13;
++    pFdpCpuCtx->r14 = pCtxCore->r14;
++    pFdpCpuCtx->r15 = pCtxCore->r15;
++    pFdpCpuCtx->cr0 = CPUMGetGuestCR0(pVCpu);
++    pFdpCpuCtx->cr2 = CPUMGetGuestCR2(pVCpu);
++    pFdpCpuCtx->cr3 = CPUMGetGuestCR3(pVCpu);
++    pFdpCpuCtx->cr4 = CPUMGetGuestCR4(pVCpu);
++}
++/*ENDFDPCODE*/
++
+ #ifdef DEBUG_ramshankar
+ # define HMVMX_ALWAYS_SAVE_GUEST_RFLAGS
+ # define HMVMX_ALWAYS_SAVE_RO_GUEST_STATE
+@@ -54,6 +93,9 @@
+ # define HMVMX_ALWAYS_SWAP_EFER
+ #endif
+ 
++/*FDPCODE*/
++#define HMVMX_ALWAYS_TRAP_ALL_XCPTS
++/*ENDFDPCODE*/
+ 
+ /*********************************************************************************************************************************
+ *   Defined Constants And Macros                                                                                                 *
+@@ -1969,6 +2011,11 @@ static void hmR0VmxStructsFree(PVMCC pVM)
+  */
+ static int hmR0VmxStructsAlloc(PVMCC pVM)
+ {
++    /*FDPCODE*/
++    pVM->fdpstate.s.PageSpinlock = NIL_RTSPINLOCK;
++    RTSpinlockCreate(&pVM->fdpstate.s.PageSpinlock, RTSPINLOCK_FLAGS_INTERRUPT_SAFE, pVM->fdpstate.s.PageSpinLockName);
++    /*ENDFDPCODE*/
++
+     /*
+      * Sanity check the VMCS size reported by the CPU as we assume 4KB allocations.
+      * The VMCS size cannot be more than 4096 bytes.
+@@ -5940,8 +5987,10 @@ static int hmR0VmxExportSharedDebugState(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTrans
+     if (pVmcsInfo->u32EntryCtls & VMX_ENTRY_CTLS_LOAD_DEBUG)
+     {
+         /* Validate. Intel spec. 17.2 "Debug Registers", recompiler paranoia checks. */
+-        Assert((pVCpu->cpum.GstCtx.dr[7] & (X86_DR7_MBZ_MASK | X86_DR7_RAZ_MASK)) == 0);
+-        Assert((pVCpu->cpum.GstCtx.dr[7] & X86_DR7_RA1_MASK) == X86_DR7_RA1_MASK);
++        /*FDPCODE*/
++        // Assert((pVCpu->cpum.GstCtx.dr[7] & (X86_DR7_MBZ_MASK | X86_DR7_RAZ_MASK)) == 0);
++        // Assert((pVCpu->cpum.GstCtx.dr[7] & X86_DR7_RA1_MASK) == X86_DR7_RA1_MASK);
++        /*ENDFDPCODE*/
+     }
+ #endif
+ 
+@@ -6023,11 +6072,25 @@ static int hmR0VmxExportSharedDebugState(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTrans
+         pVCpu->hm.s.fUsingHyperDR7 = false;
+     }
+ 
++    /*FDPCODE*/
++    //Always intercept MovDRx
++    fInterceptMovDRx = true;
++    /*ENDFDPCODE*/
++
+     if (fInterceptMovDRx)
+         uProcCtls |= VMX_PROC_CTLS_MOV_DR_EXIT;
+     else
+         uProcCtls &= ~VMX_PROC_CTLS_MOV_DR_EXIT;
+ 
++    /*FDPCODE*/
++    //Always Intercept MovDrx
++    uProcCtls |= VMX_PROC_CTLS_MOV_DR_EXIT;
++    uProcCtls |= VMX_PROC_CTLS_CR3_LOAD_EXIT;
++    uProcCtls |= VMX_PROC_CTLS_CR3_STORE_EXIT;
++    uProcCtls |= VMX_PROC_CTLS_CR8_LOAD_EXIT;
++    uProcCtls |= VMX_PROC_CTLS_CR8_STORE_EXIT;
++    /*ENDFDPCODE*/
++
+     /*
+      * Update the processor-based VM-execution controls with the MOV-DRx intercepts and the
+      * monitor-trap flag and update our cache.
+@@ -11106,6 +11169,10 @@ static void hmR0VmxPostRunGuest(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient, int
+             rc = hmR0VmxImportGuestState(pVCpu, pVmcsInfo, fImportMask);
+             AssertRC(rc);
+ 
++            /*FDPCODE*/
++            UpdateFdpCpuCtx(pVCpu);
++            /*ENDFDPCODE*/
++
+             /*
+              * Sync the TPR shadow with our APIC state.
+              */
+@@ -12503,6 +12570,12 @@ static VBOXSTRICTRC hmR0VmxRunGuestCodeDebug(PVMCPUCC pVCpu, uint32_t *pcLoops)
+         STAM_PROFILE_ADV_STOP(&pVCpu->hm.s.StatExitHandling, x);
+         if (rcStrict != VINF_SUCCESS)
+             break;
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired)
++        {
++            break;
++        }
++        /*ENDFDPCODE*/
+         if (++(*pcLoops) > cMaxResumeLoops)
+         {
+             STAM_COUNTER_INC(&pVCpu->hm.s.StatSwitchMaxResumeLoops);
+@@ -13935,6 +14008,62 @@ static VBOXSTRICTRC hmR0VmxExitXcptBP(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransien
+     int rc = hmR0VmxImportGuestState(pVCpu, pVmxTransient->pVmcsInfo, HMVMX_CPUMCTX_EXTRN_ALL);
+     AssertRCReturn(rc, rc);
+ 
++    /*FDPCODE*/
++    {
++        PCPUMCTX pMixedCtx = &pVCpu->cpum.GstCtx;
++        hmR0VmxReadExitIntInfoVmcs(pVmxTransient);
++        hmR0VmxReadExitIntErrorCodeVmcs(pVmxTransient);
++        hmR0VmxReadExitInstrLenVmcs(pVmxTransient);
++        PVM      pVM = pVCpu->CTX_SUFF(pVM);
++        uint64_t GCPhys;
++        PGMPhysGCPtr2GCPhys(pVCpu, pMixedCtx->rip, &GCPhys);
++        int SoftBreakpointId = VMMGetBreakpointId(pVM, GCPhys, FDP_SOFTHBP, FDP_EXECUTE_BP);
++        if (SoftBreakpointId >= 0)
++        {
++            if (pVM->bp.l[SoftBreakpointId].breakpointCr3 == 0 ||
++                pVM->bp.l[SoftBreakpointId].breakpointCr3 == CPUMGetGuestCR3(pVCpu))
++            {
++                pVCpu->fdpstate.s.bSoftHyperBreakPointHitted = true;
++                return VINF_EM_HALT;
++            }
++            else
++            {
++                //This breakpoint is filtered
++                //Full rights on OriginalPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointOrigHCPhys);
++                PGMShwPresent(pVCpu, GCPhys);
++                PGMShwWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);
++                //Invalidate the GPA
++                //VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
++                hmR0VmxFlushEpt(pVCpu, pVmxTransient->pVmcsInfo, pVM->hm.s.vmx.enmTlbFlushEpt);
++
++                //Enable MTF
++                pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls |= VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++                VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++                //Single Step
++                uint32_t cLoops = 0;
++                hmR0VmxRunGuestCodeNormal(pVCpu, &cLoops);
++                hmR0VmxReadExitQualVmcs(pVmxTransient);
++                //hmR0VmxSaveGuestSegmentRegs(pVCpu, pMixedCtx);
++                hmR0VmxImportGuestState(pVCpu, pVmxTransient->pVmcsInfo, CPUMCTX_EXTRN_SREG_MASK | CPUMCTX_EXTRN_DR7);
++                //hmR0VmxSaveGuestDR7(pVCpu, pMixedCtx);
++
++                //Disable MTF
++                pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls &= ~VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++
++                //Execute only on ModPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointHardwarePage->HCPhys);
++                PGMShwNoPresent(pVCpu, GCPhys);
++                PGMShwNoWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);  //Execute !
++                return VINF_SUCCESS;
++            }
++        }
++    }
++    /*ENDFDPCODE*/
++
+     if (!pVmxTransient->fIsNestedGuest)
+         rc = DBGFRZTrap03Handler(pVCpu->CTX_SUFF(pVM), pVCpu, CPUMCTX2CORE(&pVCpu->cpum.GstCtx));
+     else
+@@ -13989,6 +14118,30 @@ static VBOXSTRICTRC hmR0VmxExitXcptDB(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransien
+                         | (pVmxTransient->uExitQual & (  X86_DR6_B0 | X86_DR6_B1 | X86_DR6_B2 | X86_DR6_B3
+                                                        | X86_DR6_BD | X86_DR6_BS));
+ 
++    /*FDPCODE*/
++    {
++        PCPUMCTX pMixedCtx = &pVCpu->cpum.GstCtx;
++        //If it is a breakpoint we handle it
++        if ((uDR6 & (X86_DR6_B0 | X86_DR6_B1 | X86_DR6_B2 | X86_DR6_B3)))
++        {
++            //Update DR6 !
++            VMMRZCallRing3Disable(pVCpu);
++            HM_DISABLE_PREEMPT();
++
++            pMixedCtx->dr[6] &= ~X86_DR6_B_MASK;
++            pMixedCtx->dr[6] |= uDR6;
++            if (CPUMIsGuestDebugStateActive(pVCpu))
++                ASMSetDR6(pMixedCtx->dr[6]);
++
++            HM_RESTORE_PREEMPT();
++            VMMRZCallRing3Enable(pVCpu);
++
++            pVCpu->fdpstate.s.bHardHyperBreakPointHitted = true;
++            return VINF_EM_HALT;
++        }
++    }
++    /*ENDFDPCODE*/
++
+     int rc;
+     PCPUMCTX pCtx = &pVCpu->cpum.GstCtx;
+     if (!pVmxTransient->fIsNestedGuest)
+@@ -15117,6 +15270,20 @@ HMVMX_EXIT_DECL hmR0VmxExitRdmsr(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+     }
+ #endif
+ 
++    /*FDPCODE*/
++    for (int iBreakpointId = 0; iBreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; iBreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVCpu->CTX_SUFF(pVM)->bp.l[iBreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true && pTempBreakpointEntrie->breakpointType == FDP_MSRHBP &&
++            pTempBreakpointEntrie->breakpointAccessType == FDP_READ_BP &&
++            (pTempBreakpointEntrie->breakpointGCPtr == idMsr || pTempBreakpointEntrie->breakpointGCPtr == 0))
++        {
++            pVCpu->fdpstate.s.bMsrHyperBreakPointHitted = true;
++            return VINF_EM_HALT;
++        }
++    }
++    /*ENDFDPCODE*/
++
+     VBOXSTRICTRC rcStrict = IEMExecDecodedRdmsr(pVCpu, pVmxTransient->cbExitInstr);
+     STAM_COUNTER_INC(&pVCpu->hm.s.StatExitRdmsr);
+     if (rcStrict == VINF_SUCCESS)
+@@ -15166,6 +15333,20 @@ HMVMX_EXIT_DECL hmR0VmxExitWrmsr(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+ 
+     Log4Func(("ecx=%#RX32 edx:eax=%#RX32:%#RX32\n", idMsr, pVCpu->cpum.GstCtx.edx, pVCpu->cpum.GstCtx.eax));
+ 
++    /*FDPCODE*/
++    for (int iBreakpointId = 0; iBreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; iBreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVCpu->CTX_SUFF(pVM)->bp.l[iBreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true && pTempBreakpointEntrie->breakpointType == FDP_MSRHBP &&
++            pTempBreakpointEntrie->breakpointAccessType == FDP_WRITE_BP &&
++            (pTempBreakpointEntrie->breakpointGCPtr == idMsr || pTempBreakpointEntrie->breakpointGCPtr == 0))
++        {
++            pVCpu->fdpstate.s.bMsrHyperBreakPointHitted = true;
++            return VINF_EM_HALT;
++        }
++    }
++    /*ENDFDPCODE*/
++
+     VBOXSTRICTRC rcStrict = IEMExecDecodedWrmsr(pVCpu, pVmxTransient->cbExitInstr);
+     STAM_COUNTER_INC(&pVCpu->hm.s.StatExitWrmsr);
+ 
+@@ -15335,6 +15516,9 @@ HMVMX_EXIT_DECL hmR0VmxExitMovCRx(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+     PVMCC pVM = pVCpu->CTX_SUFF(pVM);
+     uint64_t const uExitQual   = pVmxTransient->uExitQual;
+     uint32_t const uAccessType = VMX_EXIT_QUAL_CRX_ACCESS(uExitQual);
++    /*FDPCODE*/
++    bool bBreakpointHitted = false;
++    /*ENDFDPCODE*/
+     switch (uAccessType)
+     {
+         /*
+@@ -15369,6 +15553,21 @@ HMVMX_EXIT_DECL hmR0VmxExitMovCRx(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+             AssertMsg(   rcStrict == VINF_SUCCESS
+                       || rcStrict == VINF_PGM_SYNC_CR3, ("%Rrc\n", VBOXSTRICTRC_VAL(rcStrict)));
+ 
++            /*FDPCODE*/
++            //Looking for a matching breakpoint
++            for (int iBreakpointId = 0; iBreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; iBreakpointId++)
++            {
++                BreakpointEntrie_t* pTempBreakpointEntrie = &pVCpu->CTX_SUFF(pVM)->bp.l[iBreakpointId];
++                if (pTempBreakpointEntrie->breakpointActivated == true && pTempBreakpointEntrie->breakpointType == FDP_CRHBP &&
++                    pTempBreakpointEntrie->breakpointAccessType == FDP_WRITE_BP &&
++                    (pTempBreakpointEntrie->breakpointGCPtr == VMX_EXIT_QUAL_CRX_REGISTER(uExitQual)))
++                {
++                    bBreakpointHitted = true;
++                    break;
++                }
++            }
++            /*ENDFDPCODE*/
++
+             /*
+              * This is a kludge for handling switches back to real mode when we try to use
+              * V86 mode to run real mode code directly.  Problem is that V86 mode cannot
+@@ -15463,6 +15662,13 @@ HMVMX_EXIT_DECL hmR0VmxExitMovCRx(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+     Assert(rcStrict != VINF_IEM_RAISED_XCPT);
+ 
+     STAM_PROFILE_ADV_STOP(&pVCpu->hm.s.StatExitMovCRx, y2);
++    /*FDPCODE*/
++    if (bBreakpointHitted == true)
++    {
++        pVCpu->fdpstate.s.bCrHyperBreakPointHitted = true;
++        return VINF_EM_HALT;
++    }
++    /*ENDFDPCODE*/
+     NOREF(pVM);
+     return rcStrict;
+ }
+@@ -15857,6 +16063,98 @@ HMVMX_EXIT_DECL hmR0VmxExitApicAccess(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransien
+  */
+ HMVMX_EXIT_DECL hmR0VmxExitMovDRx(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransient)
+ {
++    /*FDPCODE*/
++    {
++        int      rc2 = 0;
++        PCPUMCTX pMixedCtx = &pVCpu->cpum.GstCtx;
++        hmR0VmxReadExitQualVmcs(pVmxTransient);
++        //rc2 |= hmR0VmxSaveGuestSegmentRegs(pVCpu, pMixedCtx);
++        rc2 |= hmR0VmxImportGuestState(pVCpu, pVmxTransient->pVmcsInfo, CPUMCTX_EXTRN_SREG_MASK | CPUMCTX_EXTRN_DR7);
++        //rc2 |= hmR0VmxSaveGuestDR7(pVCpu, pMixedCtx);
++        AssertRCReturn(rc2, rc2);
++
++        bool DRxWrite = false;
++        //if (VMX_EXIT_QUALIFICATION_DRX_DIRECTION(pVmxTransient->uExitQual) == VMX_EXIT_QUALIFICATION_DRX_DIRECTION_WRITE){
++        if (VMX_EXIT_QUAL_DRX_DIRECTION(pVmxTransient->uExitQual) == VMX_EXIT_QUAL_DRX_DIRECTION_WRITE)
++        {
++            DRxWrite = true;
++        }
++
++        //Save the fakeDR to compare after the instruction
++        uint64_t aOldVisibleDr[8];
++        aOldVisibleDr[0] = pVCpu->fdpstate.s.aGuestDr[0];
++        aOldVisibleDr[1] = pVCpu->fdpstate.s.aGuestDr[1];
++        aOldVisibleDr[2] = pVCpu->fdpstate.s.aGuestDr[2];
++        aOldVisibleDr[3] = pVCpu->fdpstate.s.aGuestDr[3];
++        aOldVisibleDr[7] = pVCpu->fdpstate.s.aGuestDr[7];
++
++        // FDPTODO: not needed, we need to save the value when FDP_WriteRegister()
++        //Save Invisble Debug Register values used by HardHyperBreakpoint
++        uint64_t uInvisibleDr0 = ASMGetDR0();
++        uint64_t uInvisibleDr1 = ASMGetDR1();
++        uint64_t uInvisibleDr2 = ASMGetDR2();
++        uint64_t uInvisibleDr3 = ASMGetDR3();
++        uint64_t uInvisibleDr6 = ASMGetDR6();
++        uint64_t uInvisibleDr7 = CPUMGetGuestDR7(pVCpu);
++
++        //Load fake DR Values
++        CPUMSetHyperDR0(pVCpu, pVCpu->fdpstate.s.aGuestDr[0]);
++        CPUMSetHyperDR1(pVCpu, pVCpu->fdpstate.s.aGuestDr[1]);
++        CPUMSetHyperDR2(pVCpu, pVCpu->fdpstate.s.aGuestDr[2]);
++        CPUMSetHyperDR3(pVCpu, pVCpu->fdpstate.s.aGuestDr[3]);
++        CPUMSetHyperDR6(pVCpu, pVCpu->fdpstate.s.aGuestDr[6]);
++        VMXWriteVmcs32(VMX_VMCS_GUEST_DR7, (uint32_t)pVCpu->fdpstate.s.aGuestDr[7]);
++
++        //Disable #MovDRx
++        pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls &= ~VMX_PROC_CTLS_MOV_DR_EXIT;
++        //Enable MTF
++        pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls |= VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++        rc2 = VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++        //Single Step
++        //hmR0VmxRunGuestCodeNormal(pVM2, pVCpu, pMixedCtx);
++        uint32_t cLoops = 0;
++        hmR0VmxRunGuestCodeNormal(pVCpu, &cLoops);
++        hmR0VmxReadExitQualVmcs(pVmxTransient);
++        //rc2 |= hmR0VmxSaveGuestSegmentRegs(pVCpu, pMixedCtx);
++        //rc2 |= hmR0VmxSaveGuestDR7(pVCpu, pMixedCtx);
++        rc2 |= hmR0VmxImportGuestState(pVCpu, pVmxTransient->pVmcsInfo, CPUMCTX_EXTRN_SREG_MASK | CPUMCTX_EXTRN_DR7);
++        //Disable MTF
++        pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls &= ~VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++        //Enable #MovDrx
++        pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls |= VMX_PROC_CTLS_MOV_DR_EXIT;
++        rc2 = VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++        //Save new Visible Debug Register values (Usefull only on write)
++        pVCpu->fdpstate.s.aGuestDr[0] = ASMGetDR0();
++        pVCpu->fdpstate.s.aGuestDr[1] = ASMGetDR1();
++        pVCpu->fdpstate.s.aGuestDr[2] = ASMGetDR2();
++        pVCpu->fdpstate.s.aGuestDr[3] = ASMGetDR3();
++        pVCpu->fdpstate.s.aGuestDr[6] = ASMGetDR6();
++        pVCpu->fdpstate.s.aGuestDr[7] = pMixedCtx->dr[7];
++
++        //Restore Invisible Debug Register values
++        CPUMSetHyperDR0(pVCpu, uInvisibleDr0);
++        CPUMSetHyperDR1(pVCpu, uInvisibleDr1);
++        CPUMSetHyperDR2(pVCpu, uInvisibleDr2);
++        CPUMSetHyperDR3(pVCpu, uInvisibleDr3);
++        CPUMSetHyperDR6(pVCpu, uInvisibleDr6);
++        CPUMSetGuestDR7(pVCpu, (uint32_t)uInvisibleDr7);
++        VMXWriteVmcs32(VMX_VMCS_GUEST_DR7, (uint32_t)uInvisibleDr7);
++
++        //If a Visible Debug Register changed go to ring-3 install/remove a breakpoint
++        if (aOldVisibleDr[0] != pVCpu->fdpstate.s.aGuestDr[0] || aOldVisibleDr[1] != pVCpu->fdpstate.s.aGuestDr[1] ||
++            aOldVisibleDr[2] != pVCpu->fdpstate.s.aGuestDr[2] || aOldVisibleDr[3] != pVCpu->fdpstate.s.aGuestDr[3] ||
++            aOldVisibleDr[7] != pVCpu->fdpstate.s.aGuestDr[7])
++        {
++            pVCpu->fdpstate.s.bInstallDrBreakpointRequired = true;
++            return VINF_EM_HALT;
++        }
++        //Go !
++        return VINF_SUCCESS;
++    }
++    /*ENDFDPCODE*/
++
+     HMVMX_VALIDATE_EXIT_HANDLER_PARAMS(pVCpu, pVmxTransient);
+     PVMXVMCSINFO pVmcsInfo = pVmxTransient->pVmcsInfo;
+ 
+@@ -16115,6 +16413,192 @@ HMVMX_EXIT_DECL hmR0VmxExitEptViolation(PVMCPUCC pVCpu, PVMXTRANSIENT pVmxTransi
+     rcStrict = PGMR0Trap0eHandlerNestedPaging(pVM, pVCpu, PGMMODE_EPT, uErrorCode, CPUMCTX2CORE(pCtx), GCPhys);
+     TRPMResetTrap(pVCpu);
+ 
++    /*FDPCODE*/
++    if (PGMShwIsBreakable(pVCpu, GCPhys) == true)
++    {
++        //PHMGLOBALCPUINFO pCpu = hmR0GetCurrentCpu();
++        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestDE);
++        if (VMMGetBreakpointIdFromPage(pVM, GCPhys, FDP_PAGEHBP) >= 0)
++        {  //FDP_PAGEHBP
++            /*HMCPU_CF_SET(pVCpu,  HM_CHANGED_GUEST_RIP
++                                    | HM_CHANGED_GUEST_RSP
++                                    | HM_CHANGED_GUEST_RFLAGS);*/
++            ASMAtomicUoOrU64(&pVCpu->hm.s.fCtxChanged,
++                            HM_CHANGED_GUEST_RIP | HM_CHANGED_GUEST_RSP | HM_CHANGED_GUEST_RFLAGS);
++
++            int tmpAccess = 0x00;
++            if (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_READ)
++                tmpAccess |= (int)FDP_READ_BP;
++            if (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_WRITE)
++                tmpAccess |= (int)FDP_WRITE_BP;
++            if (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_INSTR_FETCH)
++                tmpAccess |= (int)FDP_EXECUTE_BP;
++
++            STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestDE);
++            //If it is one of our breakpoints, go to VMMR3 !
++            int PageBreakpointId = VMMGetBreakpointId(pVM, GCPhys, FDP_PAGEHBP, tmpAccess);
++            if (PageBreakpointId >= (int)(4 * pVM->cCpus))
++            {
++                //This is a host page breakpoint !
++                pVCpu->fdpstate.s.bPageHyperBreakPointHitted = true;
++
++                //RTSpinlockAcquire(pVM->fdpstate.s.PageSpinlock);
++                PGMShwRestoreRights(pVCpu, GCPhys);
++                //VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
++                hmR0VmxFlushEpt(pVCpu, pVmxTransient->pVmcsInfo, pVM->hm.s.vmx.enmTlbFlushEpt);
++                //RTSpinlockRelease(pVM->fdpstate.s.PageSpinlock);
++
++                return VINF_EM_HALT;
++            }
++
++            if (PageBreakpointId >= 0 && PageBreakpointId < (int)(4 * pVM->cCpus))
++            {
++                STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestGP);
++                //This is a Guest Hardware Breakpoint !
++                //Update the guest dr6
++                pCtx->dr[6] = pVCpu->fdpstate.s.aGuestDr[6];
++                for (int i = 0; i < 4; i++)
++                {
++                    if (VMMMatchBreakpointId(pVM, i, GCPhys, FDP_PAGEHBP, tmpAccess))
++                    {
++                        pCtx->dr[6] = pCtx->dr[6] | ((uint64_t)(0x1 << (i)));
++                    }
++                }
++                ASMSetDR6(pCtx->dr[6]);
++
++                //Inject a INT1 into the guest
++                hmR0VmxSetPendingXcptDB(pVCpu);
++                return VINF_SUCCESS;
++            }
++
++            //If it not the breakpoint then continue !
++            //RTSpinlockAcquire(pVM->fdpstate.s.PageSpinlock);
++            PGMShwPresent(pVCpu, GCPhys);
++            PGMShwWrite(pVCpu, GCPhys);
++            PGMShwExecute(pVCpu, GCPhys);
++            //Flush TLB
++            //#ifdef IN_RING0
++            PHMPHYSCPU pHostCpu = hmR0GetCurrentCpu();
++            hmR0VmxFlushTaggedTlb(pHostCpu, pVCpu, pVmxTransient->pVmcsInfo);
++            //#endif
++
++            //Active MTF
++            pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls |= VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++            int rc3 = VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++            //Single Step
++            //hmR0VmxRunGuestCodeNormal(pVM, pVCpu, pMixedCtx);
++            uint32_t cLoops = 0;
++            hmR0VmxRunGuestCodeNormal(pVCpu, &cLoops);
++
++            //Disable MTF
++            pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls &= ~VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++            rc3 = VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++            // FDPTODO: restoreOldFlags
++            PGMShwRestoreRights(pVCpu, GCPhys);
++            //Flush TLB
++            //VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
++            hmR0VmxFlushEpt(pVCpu, pVmxTransient->pVmcsInfo, pVM->hm.s.vmx.enmTlbFlushEpt);
++            //RTSpinlockRelease(pVM->fdpstate.s.PageSpinlock);
++
++            return VINF_SUCCESS;
++        }
++        int SoftBreakpointId = VMMGetBreakpointIdFromPage(pVM, GCPhys, FDP_SOFTHBP);
++        if (SoftBreakpointId > 0)
++        {
++            //FDP_SOFTHBP
++            ASMAtomicUoOrU64(&pVCpu->hm.s.fCtxChanged,
++                            HM_CHANGED_GUEST_RIP | HM_CHANGED_GUEST_RSP | HM_CHANGED_GUEST_RFLAGS);
++
++            //Avoid stack overflow when Fault inside fault !
++            if (pVCpu->fdpstate.s.bPageFaultOverflowGuard)
++            {
++                STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestGP);
++                return VINF_SUCCESS;
++            }
++
++            //RTSpinlockAcquire(pVM->fdpstate.s.PageSpinlock);
++            pVCpu->fdpstate.s.bPageFaultOverflowGuard = true;
++            bool bWriteAccess = ((pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_WRITE) != 0);
++            rc = VINF_SUCCESS;
++
++            //Execute Access
++            if (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_INSTR_FETCH)
++            {
++                //Execute only on ModPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointHardwarePage->HCPhys);
++                PGMShwNoPresent(pVCpu, GCPhys);
++                PGMShwNoWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);  //Execute !
++            }
++            else
++            {
++                //Read or Write Access
++                //if((pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_READ)
++                //  || (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_WRITE))
++                //{
++                //Read, Write on OriginalPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointOrigHCPhys);
++                PGMShwPresent(pVCpu, GCPhys);  //Read !
++                PGMShwWrite(pVCpu, GCPhys);    //Write !
++                PGMShwNoExecute(pVCpu, GCPhys);
++                //}
++            }
++
++            //Trash case, FDPTODO: What is this ? Why ? Maybe "mov [rax], rcx" and rax inside the page
++            if (((pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_READ) &&
++                (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_DATA_WRITE) &&
++                (pVmxTransient->uExitQual & VMX_EXIT_QUAL_EPT_INSTR_FETCH)))
++            {  //Special case
++                //Full rights on OriginalPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointOrigHCPhys);
++                PGMShwPresent(pVCpu, GCPhys);
++                PGMShwWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);
++                //Invalidate the GPA
++                //VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
++                hmR0VmxFlushEpt(pVCpu, pVmxTransient->pVmcsInfo, pVM->hm.s.vmx.enmTlbFlushEpt);
++
++                //Active MTF
++                pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls |= VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++                VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++                //Single Step
++                //rc = VBOXSTRICTRC_VAL(hmR0VmxRunGuestCodeNormal(pVM, pVCpu, pMixedCtx));
++                uint32_t cLoops = 0;
++                rc = VBOXSTRICTRC_VAL(hmR0VmxRunGuestCodeNormal(pVCpu, &cLoops));
++
++                //Disable MTF
++                pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls &= ~VMX_PROC_CTLS_MONITOR_TRAP_FLAG;
++                VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.VmcsInfo.u32ProcCtls);
++
++                //Execute only on ModPage
++                PGMShwSetHCPage(pVCpu, GCPhys, pVM->bp.l[SoftBreakpointId].breakpointHardwarePage->HCPhys);
++                PGMShwNoPresent(pVCpu, GCPhys);
++                PGMShwNoWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);  //Execute !
++            }
++            else
++            {
++                if (bWriteAccess == true)
++                {
++                    // FDPTODO: OrignalPage, SingleStep, Copy OrignalPage to ModPage, Reinstall the HLT
++                }
++            }
++
++            //Invalidate the page
++            //VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
++            hmR0VmxFlushEpt(pVCpu, pVmxTransient->pVmcsInfo, pVM->hm.s.vmx.enmTlbFlushEpt);
++
++            pVCpu->fdpstate.s.bPageFaultOverflowGuard = false;
++            //RTSpinlockRelease(pVM->fdpstate.s.PageSpinlock);
++
++            return rc;
++        }
++    }
++    /*ENDFDPCODE*/
++
+     /* Same case as PGMR0Trap0eHandlerNPMisconfig(). See comment above, @bugref{6043}. */
+     if (   rcStrict == VINF_SUCCESS
+         || rcStrict == VERR_PAGE_TABLE_NOT_PRESENT
+diff --git a/src/VBox/VMM/VMMR0/VMMR0.cpp b/src/VBox/VMM/VMMR0/VMMR0.cpp
+index 5c7925d9..8865897d 100644
+--- a/src/VBox/VMM/VMMR0/VMMR0.cpp
++++ b/src/VBox/VMM/VMMR0/VMMR0.cpp
+@@ -62,6 +62,13 @@
+ #include <iprt/timer.h>
+ #include <iprt/time.h>
+ 
++/*FDPCODE*/
++#include <VBox/vmm/mm.h>
++#include <VBox/vmm/pgm.h>
++#include <iprt/mem.h>
++#include <iprt/memobj.h>
++/*ENDFDPCODE*/
++
+ #include "dtrace/VBoxVMM.h"
+ 
+ 
+@@ -2239,6 +2246,56 @@ static int vmmR0EntryExWorker(PGVM pGVM, VMCPUID idCpu, VMMR0OPERATION enmOperat
+             /** @todo make new test */
+             return VINF_SUCCESS;
+ 
++        /*FDPCODE*/
++        case VMMR0_DO_ALLOC_HCPHYS:
++        {
++            ALLOCPAGEREQ* pReq = (ALLOCPAGEREQ*)pReqHdr;
++            if (pReq == NULL)
++            {
++                LogRel(("[WDEBUG] pReqHdr is NULL\n"));
++                return -2;
++            }
++            int        rc = 0;
++            RTR0MEMOBJ hMemObjMod;
++            //Allocates a new physical page
++            //rc = RTR0MemObjAllocPhysEx(&hMemObjMod, pReq->newPageSize, NIL_RTHCPHYS, pReq->newPageSize);
++            //rc = RTR0MemObjAllocPhysEx(&hMemObjMod, 4096, NIL_RTHCPHYS, 4096);
++            rc = RTR0MemObjAllocLow(&hMemObjMod, pReq->newPageSize, false);
++            if (RT_SUCCESS(rc))
++            {
++                //Maps the new page in ring-0 address space
++                RTR0MEMOBJ hMapObjMod;
++                rc = RTR0MemObjMapKernel(&hMapObjMod, hMemObjMod, (void*)-1, 0, RTMEM_PROT_READ | RTMEM_PROT_WRITE);
++                //Maps the new page in ring-3 address space
++                int rc2 = RTR0MemObjMapUser(&hMapObjMod, hMemObjMod, (RTR3PTR)-1, 0, RTMEM_PROT_READ | RTMEM_PROT_WRITE,
++                                            NIL_RTR0PROCESS);
++                LogRel(("[WEBUG] Mappin %d %d\n", rc, rc2));
++                if (RT_SUCCESS(rc) && RT_SUCCESS(rc2))
++                {
++                    //Gets the ring-0 address of the new page
++                    //pVM->args.allochcphysreq.R0Ptr = (uint8_t*)RTR0MemObjAddress(hMapObjMod);
++                    //Gets the ring-3 address of the new page
++                    pReq->newPageR3Ptr = (uint8_t*)RTR0MemObjAddressR3(hMapObjMod);
++                    //Gets the physical address of the new page
++                    pReq->newPageHCPHys = RTR0MemObjGetPagePhysAddr(hMapObjMod, 0);
++                    return 0;
++                }
++                else
++                {
++                    LogRel(("[WDEBUG] Map failed ! \n"));
++                    return -3;
++                }
++            }
++            else
++            {
++                LogRel(("[WDEBUG] Alloc failed !\n"));
++                return rc;
++            }
++            return -4;
++        }
++        return VERR_NOT_SUPPORTED;
++        /*ENFDPCODE*/
++
+         default:
+             /*
+              * We're returning VERR_NOT_SUPPORT here so we've got something else
+diff --git a/src/VBox/VMM/VMMR3/CPUM.cpp b/src/VBox/VMM/VMMR3/CPUM.cpp
+index f2bc2102..9a1d28fc 100644
+--- a/src/VBox/VMM/VMMR3/CPUM.cpp
++++ b/src/VBox/VMM/VMMR3/CPUM.cpp
+@@ -2360,6 +2360,10 @@ VMMR3DECL(int) CPUMR3Term(PVM pVM)
+  */
+ VMMR3DECL(void) CPUMR3ResetCpu(PVM pVM, PVMCPU pVCpu)
+ {
++    /*FDPCODE*/
++    pVCpu->fdpstate.s.bRestoreRequired = false;
++    pVCpu->fdpstate.s.bPauseRequired = false;
++    /*ENDFDPCODE*/
+     /** @todo anything different for VCPU > 0? */
+     PCPUMCTX pCtx = &pVCpu->cpum.s.Guest;
+ 
+diff --git a/src/VBox/VMM/VMMR3/EM.cpp b/src/VBox/VMM/VMMR3/EM.cpp
+index d2a3fac0..a8310ed0 100644
+--- a/src/VBox/VMM/VMMR3/EM.cpp
++++ b/src/VBox/VMM/VMMR3/EM.cpp
+@@ -68,6 +68,9 @@
+ #include <iprt/stream.h>
+ #include <iprt/thread.h>
+ 
++/*FDPCODE*/
++#include <FDP.h>
++/*ENDFDPCODE*/
+ 
+ /*********************************************************************************************************************************
+ *   Internal Functions                                                                                                           *
+@@ -120,6 +123,11 @@ VMMR3_INT_DECL(int) EMR3Init(PVM pVM)
+         pVM->em.s.fGuruOnTripleFault = true;
+     }
+ 
++    /*FDPCODE*/
++    //Dont Guru on Triple Fault... This is annoying !
++    pVM->em.s.fGuruOnTripleFault = false;
++    /*ENDFDPCODE*/
++
+     LogRel(("EMR3Init: fIemExecutesAll=%RTbool fGuruOnTripleFault=%RTbool\n", pVM->em.s.fIemExecutesAll, pVM->em.s.fGuruOnTripleFault));
+ 
+     /** @cfgm{/EM/ExitOptimizationEnabled, bool, true}
+@@ -834,7 +842,9 @@ static VBOXSTRICTRC emR3Debug(PVM pVM, PVMCPU pVCpu, VBOXSTRICTRC rc)
+              * Simple events: stepped, breakpoint, stop/assertion.
+              */
+             case VINF_EM_DBG_STEPPED:
+-                rc = DBGFR3Event(pVM, DBGFEVENT_STEPPED);
++                /*FDPCODE*/
++                // rc = DBGFR3Event(pVM, DBGFEVENT_STEPPED);
++                /*ENDFDPCODE*/
+                 break;
+ 
+             case VINF_EM_DBG_BREAKPOINT:
+@@ -2316,6 +2326,31 @@ VMMR3_INT_DECL(int) EMR3ExecuteVM(PVM pVM, PVMCPU pVCpu)
+             else if (fFFDone)
+                 fFFDone = false;
+ 
++            /*FDPCODE*/
++            if (pVCpu->fdpstate.s.bPauseRequired)
++            {
++                //Set the active CPU as STATE_PAUSED
++                pVCpu->fdpstate.s.u8StateBitmap |= FDP_STATE_PAUSED;
++                //LogRel(("[WDEBUG] CPU[%d] Entering PAUSE in EM!\n", pVCpu->idCpu));
++                VMR3EnterPause(pVM, pVCpu);
++                //LogRel(("[WDEBUG] CPU[%d] Leaving PAUSE in EM!\n", pVCpu->idCpu));
++                rc = VINF_SUCCESS;
++            }
++            pVCpu->fdpstate.s.u8StateBitmap &= ~FDP_STATE_PAUSED;
++            pVCpu->fdpstate.s.u64TickCount++;
++            if (pVCpu->fdpstate.s.bRebootRequired)
++            {
++                rc = VINF_EM_TRIPLE_FAULT;
++                pVM->em.s.fGuruOnTripleFault = false;
++                pVCpu->fdpstate.s.bRebootRequired = false;
++            }
++            if (pVCpu->fdpstate.s.bSuspendRequired)
++            {
++                rc = VINF_EM_SUSPEND;
++                pVCpu->fdpstate.s.bSuspendRequired = false;
++            }
++            /*FDPCODE*/
++
+             /*
+              * Now what to do?
+              */
+@@ -2868,3 +2903,17 @@ VMMR3_INT_DECL(int) EMR3ExecuteVM(PVM pVM, PVMCPU pVCpu)
+     /* not reached */
+ }
+ 
++/*FDPCODE*/
++VMMR3_INT_DECL(int) EMR3ProcessForcedAction(PVM pVM, PVMCPU pVCpu, int rc)
++{
++    rc = emR3ForcedActions(pVM, pVCpu, rc);
++    VBOXVMM_EM_FF_ALL_RET(pVCpu, rc);
++
++    EMSTATE enmState = emR3Reschedule(pVM, pVCpu);
++    //LogRel(("EMR3ExecuteVM: VINF_EM_RESCHEDULE: %d -> %d (%s)\n", 0, enmState, "emR3GetStateName(enmState)"));
++    if (pVCpu->em.s.enmState != enmState && enmState == EMSTATE_IEM_THEN_REM)
++        pVCpu->em.s.cIemThenRemInstructions = 0;
++    pVCpu->em.s.enmState = enmState;
++    return rc;
++}
++/*ENDFDPCODE*/
+diff --git a/src/VBox/VMM/VMMR3/EMHM.cpp b/src/VBox/VMM/VMMR3/EMHM.cpp
+index 378b40f8..427a361d 100644
+--- a/src/VBox/VMM/VMMR3/EMHM.cpp
++++ b/src/VBox/VMM/VMMR3/EMHM.cpp
+@@ -464,6 +464,10 @@ int emR3HmExecute(PVM pVM, PVMCPU pVCpu, bool *pfFFDone)
+                 break;
+             }
+         }
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired)
++            break;
++        /*ENDFDPCODE*/
+     }
+ 
+     /*
+diff --git a/src/VBox/VMM/VMMR3/MM.cpp b/src/VBox/VMM/VMMR3/MM.cpp
+index 2696ce61..98cbf4d6 100644
+--- a/src/VBox/VMM/VMMR3/MM.cpp
++++ b/src/VBox/VMM/VMMR3/MM.cpp
+@@ -847,3 +847,9 @@ VMMR3DECL(uint32_t) MMR3PhysGet4GBRamHoleSize(PVM pVM)
+     return pVM->mm.s.cbRamHole;
+ }
+ 
++/*FDPCODE*/
++VMMR3DECL(uint64_t) MMR3PhysGetRamSizeU(PUVM pUVM)
++{
++    return pUVM->pVM->mm.s.cbRamBase;
++}
++/*ENDFDPCODE*/
+diff --git a/src/VBox/VMM/VMMR3/PGMDbg.cpp b/src/VBox/VMM/VMMR3/PGMDbg.cpp
+index 520017d2..e5d2a9ac 100644
+--- a/src/VBox/VMM/VMMR3/PGMDbg.cpp
++++ b/src/VBox/VMM/VMMR3/PGMDbg.cpp
+@@ -779,6 +779,14 @@ VMMR3_INT_DECL(int) PGMR3DbgScanPhysical(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cbRa
+     return VERR_DBGF_MEM_NOT_FOUND;
+ }
+ 
++/*FDPCODE*/
++VMMR3_INT_DECL(int)
++PGMR3DbgScanPhysicalU(PUVM pUVM, RTGCPHYS GCPhys, RTGCPHYS cbRange, RTGCPHYS GCPhysAlign, const uint8_t* pabNeedle,
++                      size_t cbNeedle, PRTGCPHYS pGCPhysHit)
++{
++    return PGMR3DbgScanPhysical(pUVM->pVM, GCPhys, cbRange, GCPhysAlign, pabNeedle, cbNeedle, pGCPhysHit);
++}
++/*ENDFDPCODE*/
+ 
+ /**
+  * Scans (guest) virtual memory for a byte string.
+diff --git a/src/VBox/VMM/VMMR3/TRPM.cpp b/src/VBox/VMM/VMMR3/TRPM.cpp
+index 10c49f03..5c6de09f 100644
+--- a/src/VBox/VMM/VMMR3/TRPM.cpp
++++ b/src/VBox/VMM/VMMR3/TRPM.cpp
+@@ -360,6 +360,14 @@ static DECLCALLBACK(int) trpmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion,
+  */
+ VMMR3DECL(int) TRPMR3InjectEvent(PVM pVM, PVMCPU pVCpu, TRPMEVENT enmEvent, bool *pfInjected)
+ {
++    /*FDPCODE*/
++    //Avoid interrupt during restore or pause
++    if (pVCpu->fdpstate.s.bRestoreRequired || pVCpu->fdpstate.s.bPauseRequired || pVCpu->fdpstate.s.bDisableInterrupt)
++    {
++        return VINF_EM_RESCHEDULE_HM;
++    }
++    /*ENDFDPCODE*/
++
+     PCPUMCTX pCtx = CPUMQueryGuestCtxPtr(pVCpu);
+     Assert(!VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS));
+     Assert(pfInjected);
+diff --git a/src/VBox/VMM/VMMR3/VM.cpp b/src/VBox/VMM/VMMR3/VM.cpp
+index 2ef84439..38ac9068 100644
+--- a/src/VBox/VMM/VMMR3/VM.cpp
++++ b/src/VBox/VMM/VMMR3/VM.cpp
+@@ -86,6 +86,11 @@
+ #include <iprt/thread.h>
+ #include <iprt/uuid.h>
+ 
++/*FDPCODE*/
++#include <FDP.h>
++#include <FDP_structs.h>
++#include <iprt/spinlock.h>
++/*ENDFDPCODE*/
+ 
+ /*********************************************************************************************************************************
+ *   Internal Functions                                                                                                           *
+@@ -615,6 +620,18 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCpus, PFNCFGMCONSTRUCTOR pfnCFGMCons
+             rc = vmR3ReadBaseConfig(pVM, pUVM, cCpus);
+             if (RT_SUCCESS(rc))
+             {
++                /*FDPCODE*/
++                //This spinlock is created in Ring-0!
++                strcpy(pVM->fdpstate.s.PageSpinLockName, "PAGELOCK_");
++                strcat(pVM->fdpstate.s.PageSpinLockName, VMR3GetName(pUVM));
++
++                //Create CpuSpinLock
++                char CpuSpinLockName[256];
++                strcpy(CpuSpinLockName, "CPULOCK_");
++                strcat(CpuSpinLockName, VMR3GetName(pUVM));
++                pVM->fdpstate.s.CpuLock = NIL_RTSPINLOCK;
++                RTSpinlockCreate(&pVM->fdpstate.s.CpuLock, RTSPINLOCK_FLAGS_INTERRUPT_UNSAFE, CpuSpinLockName);
++                /*ENDFDPCODE*/
+                 /*
+                  * Init the ring-3 components and ring-3 per cpu data, finishing it off
+                  * by a relocation round (intermediate context finalization will do this).
+@@ -1286,6 +1303,13 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Resume(PVM pVM, PVMCPU pVCpu, void *pvUser
+     VMRESUMEREASON enmReason = (VMRESUMEREASON)(uintptr_t)pvUser;
+     LogFlow(("vmR3Resume: pVM=%p pVCpu=%p/#%u enmReason=%d\n", pVM, pVCpu, pVCpu->idCpu, enmReason));
+ 
++    /*FDPCODE*/
++    if (pVCpu->fdpstate.s.bRestoreRequired == true)
++    {
++        pVCpu->fdpstate.s.bPauseRequired = true;
++    }
++    /*ENDFDPCODE*/
++
+     /*
+      * The first thread thru here tries to change the state.  We shouldn't be
+      * called again if this fails.
+@@ -1759,6 +1783,31 @@ VMMR3DECL(int) VMR3Save(PUVM pUVM, const char *pszFilename, bool fContinueAfterw
+     return rc;
+ }
+ 
++/*FDPCODE*/
++VMMR3_INT_DECL(int) VMR3SaveFT(PUVM pUVM, PCSSMSTRMOPS pStreamOps, void* pvStreamOpsUser, bool* pfSuspended)
++{
++    LogFlow(("VMR3SaveFT: pUVM=%p pStreamOps=%p pvSteamOpsUser=%p pfSuspended=%p\n", pUVM, pStreamOps, pvStreamOpsUser,
++             pfSuspended));
++
++    /*
++     * Validate input.
++     */
++    AssertPtr(pfSuspended);
++    *pfSuspended = false;
++    UVM_ASSERT_VALID_EXT_RETURN(pUVM, VERR_INVALID_VM_HANDLE);
++    PVM pVM = pUVM->pVM;
++    VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
++    AssertReturn(pStreamOps, VERR_INVALID_PARAMETER);
++
++    /*
++     * Join paths with VMR3Teleport.
++     */
++    int rc = vmR3SaveTeleport(pVM, 250 /*cMsMaxDowntime*/, NULL, pStreamOps, pvStreamOpsUser, SSMAFTER_CONTINUE, NULL,
++                              NULL, pfSuspended);
++    LogFlow(("VMR3SaveFT: returns %Rrc (*pfSuspended=%RTbool)\n", rc, *pfSuspended));
++    return rc;
++}
++/*ENDFDPCODE*/
+ 
+ /**
+  * Teleport the VM (aka live migration).
+@@ -1967,6 +2016,29 @@ VMMR3DECL(int) VMR3LoadFromStream(PUVM pUVM, PCSSMSTRMOPS pStreamOps, void *pvSt
+  */
+ static DECLCALLBACK(VBOXSTRICTRC) vmR3PowerOff(PVM pVM, PVMCPU pVCpu, void *pvUser)
+ {
++    /*FDPCODE*/
++    //PVMCPU pVCpu = &pUVM->pVM->aCpus[0];
++    //Do this only if the vCpu is Paused
++    if (pVCpu->fdpstate.s.bPauseRequired == true)
++    {
++        PUVM pUVM = pVM->pUVM;
++        //Avoid freeze
++        //VMR3Break(pUVM);
++        //Clear All Breakpoint
++        for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++        {
++            VMR3RemoveBreakpoint(pUVM, BreakpointId);
++        }
++        CPUMSetGuestDR7(pVCpu, 0x400);
++        //Continue
++        //VMR3Continue(pUVM);*/
++        pVCpu->fdpstate.s.bPauseRequired = false;
++
++        //Stop FDP Debugger
++        FDP_SHM* pFdpShm = (FDP_SHM*)pUVM->pVM->fdpstate.s.pFdpShm;
++        pFdpShm->pFdpServer->bIsRunning = false;
++    }
++    /*ENDFDPCODE*/
+     LogFlow(("vmR3PowerOff: pVM=%p pVCpu=%p/#%u\n", pVM, pVCpu, pVCpu->idCpu));
+     Assert(!pvUser); NOREF(pvUser);
+ 
+diff --git a/src/VBox/VMM/VMMR3/VMEmt.cpp b/src/VBox/VMM/VMMR3/VMEmt.cpp
+index 69f785b3..f3341216 100644
+--- a/src/VBox/VMM/VMMR3/VMEmt.cpp
++++ b/src/VBox/VMM/VMMR3/VMEmt.cpp
+@@ -39,6 +39,17 @@
+ #include <iprt/thread.h>
+ #include <iprt/time.h>
+ 
++/*FDPCODE*/
++#include <stdlib.h>
++
++#include <VBox/vmm/gmm.h>
++#include <VBox/vmm/iem.h>
++#include <VBox/vmm/pgm.h>
++
++#include <FDP.h>
++#include <FDP_structs.h>
++#include <iprt/spinlock.h>
++/*ENDFDPCODE*/
+ 
+ /*********************************************************************************************************************************
+ *   Internal Functions                                                                                                           *
+@@ -375,12 +386,23 @@ static DECLCALLBACK(int) vmR3HaltOldDoHalt(PUVMCPU pUVCpu, const uint32_t fMask,
+         if (    VM_FF_IS_ANY_SET(pVM, VM_FF_EXTERNAL_HALTED_MASK)
+             ||  VMCPU_FF_IS_ANY_SET(pVCpu, fMask))
+             break;
++
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired == true)
++            break;
++        /*ENDFDPCODE*/
++
+         uint64_t u64NanoTS;
+         TMTimerPollGIP(pVM, pVCpu, &u64NanoTS);
+         if (    VM_FF_IS_ANY_SET(pVM, VM_FF_EXTERNAL_HALTED_MASK)
+             ||  VMCPU_FF_IS_ANY_SET(pVCpu, fMask))
+             break;
+ 
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired == true)
++            break;
++        /*ENDFDPCODE*/
++
+         /*
+          * Wait for a while. Someone will wake us up or interrupt the call if
+          * anything needs our attention.
+@@ -724,6 +746,11 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVMCPU pUVCpu, const uint32_t fMas
+             ||  VMCPU_FF_IS_ANY_SET(pVCpu, fMask))
+             break;
+ 
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired == true)
++            break;
++        /*ENDFDPCODE*/
++
+         /*
+          * Estimate time left to the next event.
+          */
+@@ -734,6 +761,11 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVMCPU pUVCpu, const uint32_t fMas
+             ||  VMCPU_FF_IS_ANY_SET(pVCpu, fMask))
+             break;
+ 
++        /*FDPCODE*/
++        if (pVCpu->fdpstate.s.bPauseRequired == true)
++            break;
++        /*ENDFDPCODE*/
++
+         /*
+          * Block if we're not spinning and the interval isn't all that small.
+          */
+@@ -1086,6 +1118,1049 @@ VMMR3_INT_DECL(void) VMR3NotifyCpuFFU(PUVMCPU pUVCpu, uint32_t fFlags)
+     g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnNotifyCpuFF(pUVCpu, fFlags);
+ }
+ 
++/*FDPCODE*/
++// FDPTODO: include with DBGTcp.cpp
++#define DEBUG_LEVEL 1
++
++#if DEBUG_LEVEL > 0
++#define LogRelDebug(x) LogRel(x)
++#else
++#define LogRelDebug(x)
++#endif
++
++// FDPTODO: Move this in VMMALL as there is a copy in VMMR0
++// FDPTODO: Add Cs, Ds, Es, Fs, Gs, SS, ...
++void VMR3UpdateFdpCpuCtx(PVMCPU pVCpu)
++{
++    PCCPUMCTXCORE pCtxCore = CPUMGetGuestCtxCore(pVCpu);
++    FDP_CPU_CTX*  pFdpCpuCtx = (FDP_CPU_CTX*)pVCpu->fdpstate.s.pCpuShm;
++    if (pFdpCpuCtx == NULL) {
++        LogRel(("[FDPDEBUG] VMR3UpdateFdpCpuCtx(): pFdpCpuCtx == NULL, shouldn't happen?!\n"));
++        return;
++    }
++
++    pFdpCpuCtx->rip = pCtxCore->rip;
++    pFdpCpuCtx->rax = pCtxCore->rax;
++    pFdpCpuCtx->rcx = pCtxCore->rcx;
++    pFdpCpuCtx->rdx = pCtxCore->rdx;
++    pFdpCpuCtx->rbx = pCtxCore->rbx;
++    pFdpCpuCtx->rsp = pCtxCore->rsp;
++    pFdpCpuCtx->rbp = pCtxCore->rbp;
++    pFdpCpuCtx->rsi = pCtxCore->rsi;
++    pFdpCpuCtx->rdi = pCtxCore->rdi;
++    pFdpCpuCtx->r8 = pCtxCore->r8;
++    pFdpCpuCtx->r9 = pCtxCore->r9;
++    pFdpCpuCtx->r10 = pCtxCore->r10;
++    pFdpCpuCtx->r11 = pCtxCore->r11;
++    pFdpCpuCtx->r12 = pCtxCore->r12;
++    pFdpCpuCtx->r13 = pCtxCore->r13;
++    pFdpCpuCtx->r14 = pCtxCore->r14;
++    pFdpCpuCtx->r15 = pCtxCore->r15;
++    pFdpCpuCtx->cr0 = CPUMGetGuestCR0(pVCpu);
++    pFdpCpuCtx->cr2 = CPUMGetGuestCR2(pVCpu);
++    pFdpCpuCtx->cr3 = CPUMGetGuestCR3(pVCpu);
++    pFdpCpuCtx->cr4 = CPUMGetGuestCR4(pVCpu);
++}
++
++HardwarePage_t* VMR3GetAllocatedHardwarePage(PUVM pUVM, uint64_t GCPhys)
++{
++    //Look for a breakpoint already using a convient page
++    int BreakpointId = VMMGetBreakpointIdFromPage(pUVM->pVM, GCPhys, FDP_SOFTHBP);
++    if (BreakpointId >= 0 && BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID)
++    {
++        //A breakpoint using a convient page exists
++        pUVM->pVM->bp.l[BreakpointId].breakpointHardwarePage->ReferenceCount++;
++        return pUVM->pVM->bp.l[BreakpointId].breakpointHardwarePage;
++    }
++
++    //Look in the Free HardwarePage table
++    for (uint32_t i = 0; i < pUVM->pVM->fdpstate.s.u32HardwarePageTableCount; i++)
++    {
++        if (pUVM->pVM->fdpstate.s.aHardwarePageTable[i].ReferenceCount == 0 &&
++            pUVM->pVM->fdpstate.s.aHardwarePageTable[i].HCPhys != 0 &&
++            pUVM->pVM->fdpstate.s.aHardwarePageTable[i].R3Ptr != NULL)
++        {
++            pUVM->pVM->fdpstate.s.aHardwarePageTable[i].ReferenceCount = 1;
++            return &pUVM->pVM->fdpstate.s.aHardwarePageTable[i];
++        }
++    }
++
++    LogRel(("[WDEBUG] Allocate a new HardwarePage for %p !\n", GCPhys));
++    //None are free, allocate a new one !
++    ALLOCPAGEREQ Req;
++    Req.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
++    Req.Hdr.cbReq = sizeof(Req);
++    Req.newPageSize = _4K;
++    int rc = SUPR3CallVMMR0Ex(pUVM->pVM->pVMR0ForCall, NIL_VMCPUID, VMMR0_DO_ALLOC_HCPHYS, 0, &Req.Hdr);
++    if (rc != 0)
++    {
++        LogRel(("[WDEBUG] Failed to allocate a new HardwarePage %d\n", rc));
++        return NULL;
++    }
++
++    HardwarePage_t* TmpHardwarePage =
++        &pUVM->pVM->fdpstate.s.aHardwarePageTable[pUVM->pVM->fdpstate.s.u32HardwarePageTableCount];
++
++    TmpHardwarePage->PageSize = _4K;
++    TmpHardwarePage->HCPhys = Req.newPageHCPHys;
++    TmpHardwarePage->R3Ptr = Req.newPageR3Ptr;
++    TmpHardwarePage->ReferenceCount = 1;
++
++    pUVM->pVM->fdpstate.s.u32HardwarePageTableCount++;
++
++    return TmpHardwarePage;
++}
++
++/*
++ * @brief: Restore all Original HCPhys for SoftHyperBreakpointed GCPhys
++ */
++VMMR3_INT_DECL(int)
++VMR3RestoreAllOriginalPage(PUVM pUVM, bool bIsRead, bool bIsWrite, bool bIsExecute)
++{
++    PVM                 pVM = pUVM->pVM;
++    PVMCPU              pVCpu = pUVM->aCpus[0].pVCpu;
++    BreakpointEntrie_t* pTempBreakpointEntrie = NULL;
++    for (uint8_t BreakpointId = 4 * pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        //Check if Breakpoint is Activated and if it is a SoftWareBreakpoint
++        if (pTempBreakpointEntrie->breakpointActivated == true &&
++            pTempBreakpointEntrie->breakpointType == FDP_SOFTHBP &&
++            pTempBreakpointEntrie->breakpointOrigHCPhys != 0x0 &&
++            pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].Start != 0x0)
++        {
++            //Set Original Page as Read and Write
++            uint64_t GCPhys = pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].Start;
++            PGMShwSetHCPage(pVCpu, GCPhys, pTempBreakpointEntrie->breakpointOrigHCPhys);
++            if (bIsRead == true)
++            {
++                PGMShwPresent(pVCpu, GCPhys);
++            }
++            else
++            {
++                PGMShwNoPresent(pVCpu, GCPhys);
++            }
++            if (bIsWrite == true)
++            {
++                PGMShwWrite(pVCpu, GCPhys);
++            }
++            else
++            {
++                PGMShwNoWrite(pVCpu, GCPhys);
++            }
++            if (bIsExecute == true)
++            {
++                PGMShwExecute(pVCpu, GCPhys);
++            }
++            else
++            {
++                PGMShwNoExecute(pVCpu, GCPhys);
++            }
++            //Set page as breakable !
++            PGMShwSetBreakable(pVCpu, GCPhys, true);
++            //Invalidate the page !
++            PGMShwInvalidate(pVCpu, GCPhys);
++        }
++    }
++    return 0;
++}
++
++VMMR3_INT_DECL(int)
++VMR3AddMsrBreakpoint(PUVM pUVM, uint8_t BreakpointAccessType, uint64_t BreakpointAddress)
++{
++    PVM pVM = pUVM->pVM;
++    //Look for a free breakpoint
++    for (int BreakpointId = 4 * pUVM->pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == false)
++        {
++            pTempBreakpointEntrie->breakpointActivated = true;
++            pTempBreakpointEntrie->breakpointGCPtr = BreakpointAddress;
++            pTempBreakpointEntrie->breakpointOrigHCPhys = 0x0;
++            pTempBreakpointEntrie->breakpointType = FDP_MSRHBP;
++            pTempBreakpointEntrie->breakpointLength = 1;
++            pTempBreakpointEntrie->breakpointAccessType = BreakpointAccessType;
++            pTempBreakpointEntrie->breakpointPageSize = 0x0;
++            pTempBreakpointEntrie->breakpointHardwarePage = NULL;
++            pTempBreakpointEntrie->breakpointGCPhysAreaCount = 0;
++            pTempBreakpointEntrie->breakpointGCPhysAreaTable = NULL;
++
++            return BreakpointId;
++        }
++    }
++    return -1;
++}
++
++VMMR3_INT_DECL(int)
++VMR3AddCrBreakpoint(PUVM pUVM, uint8_t BreakpointAccessType, uint64_t BreakpointAddress)
++{
++    PVM pVM = pUVM->pVM;
++    //Look for a free breakpoint
++    for (int BreakpointId = 4 * pUVM->pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == false)
++        {
++            pTempBreakpointEntrie->breakpointActivated = true;
++            pTempBreakpointEntrie->breakpointGCPtr = BreakpointAddress;
++            pTempBreakpointEntrie->breakpointOrigHCPhys = 0x0;
++            pTempBreakpointEntrie->breakpointType = FDP_CRHBP;
++            pTempBreakpointEntrie->breakpointLength = 1;
++            pTempBreakpointEntrie->breakpointAccessType = BreakpointAccessType;
++            pTempBreakpointEntrie->breakpointPageSize = 0x0;
++            pTempBreakpointEntrie->breakpointHardwarePage = NULL;
++            pTempBreakpointEntrie->breakpointGCPhysAreaCount = 0;
++            pTempBreakpointEntrie->breakpointGCPhysAreaTable = NULL;
++
++            return BreakpointId;
++        }
++    }
++    return -1;
++}
++
++VMMR3_INT_DECL(int)
++VMR3AddSoftBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint8_t BreakpointAddressType, uint64_t BreakpointAddress,
++                      uint64_t BreakpointCr3)
++{  // FDPTODO: Move it to VMMAll !
++
++    LogRel(("[WDEBUG] VMR3AddSoftBreakpoint in\n"));
++    VMR3RestoreAllOriginalPage(pUVM, true, true, false);
++
++    PVM pVM = pUVM->pVM;
++
++    //Convert GCPtr to GCPhys if needed
++    uint64_t GCPhys;
++    uint64_t GCPtr = 0;
++    if (BreakpointAddressType == 0x1)
++    {  //Virtual
++        GCPtr = BreakpointAddress;
++        PGMPhysGCPtr2GCPhys(pVCpu, BreakpointAddress, &GCPhys);
++        //PGMGstGetPage(pVCpu, BreakpointAddress, NULL, &GCPhys);
++    }
++    else
++    {  //Physical
++        GCPhys = BreakpointAddress;
++    }
++
++    //Look for an already existing SoftHyperBreakpoint with same GCPhys
++    for (int BreakpointId = 4 * pUVM->pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true &&
++            pTempBreakpointEntrie->breakpointType == FDP_SOFTHBP &&
++            pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].Start == GCPhys)
++        {
++            //We found one !
++            return BreakpointId;
++        }
++    }
++
++    for (int BreakpointId = 4 * pUVM->pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++
++        //Find a free breakpoint
++        if (pTempBreakpointEntrie->breakpointActivated == false)
++        {
++            //Get Original HCPhys
++            uint64_t origHCPhys;
++            //It is the OriginalPage because we called VMR3RestoreAllOriginalPage(pUVM);
++            PGMShwGetHCPage(pVCpu, GCPhys, &origHCPhys);
++            //After restore EPTPTE are not initilized
++            if (origHCPhys < 0x100)
++            {
++                LogRel(("[WDEBUG] AddSoft %p %p\n", GCPhys, origHCPhys));
++                return -1;
++            }
++
++            //Get a HardwarePage
++            HardwarePage_t* pTempHardwarePage = VMR3GetAllocatedHardwarePage(pUVM, GCPhys);
++            if (pTempHardwarePage != NULL)
++            {
++                if (pTempHardwarePage->ReferenceCount == 1)
++                {
++                    //This is the first breakpoint using this hardware page
++                    //Copy original page content to new page only if the page is new
++                    LogRel(("[WDEBUG] Copy OrignalPage to ModificatedPage\n"));
++                    PGMPhysSimpleReadGCPhys(pUVM->pVM, (void*)pTempHardwarePage->R3Ptr,
++                                            (RTGCPHYS)(GCPhys & ~(pTempHardwarePage->PageSize - 1)),
++                                            pTempHardwarePage->PageSize);
++                }
++
++                LogRel(("[WDEBUG] SoftHyperBreakpoint installation : \n"));
++                LogRel(("[WDEBUG] Original page HCPhys: 0x%p\n", origHCPhys));
++                LogRel(("[WDEBUG] GCPhys: 0x%p\n", GCPhys));
++                LogRel(("[WDEBUG] pTempHardwarePage: %p\n", pTempHardwarePage));
++                LogRel(("[WDEBUG] Modificated page HCPhys:  0x%p\n", pTempHardwarePage->HCPhys));
++                LogRel(("[WDEBUG] Modificated page R3Ptr:  0x%p\n", pTempHardwarePage->R3Ptr));
++                LogRel(("[WDEBUG] HardwarePage Reference Count: %d\n", pTempHardwarePage->ReferenceCount));
++                LogRel(("[WDEBUG] \n"));
++
++                pTempBreakpointEntrie->breakpointActivated = true;
++                pTempBreakpointEntrie->breakpointGCPtr = GCPtr;
++                pTempBreakpointEntrie->breakpointOrigHCPhys = origHCPhys;
++                pTempBreakpointEntrie->breakpointType = FDP_SOFTHBP;
++                pTempBreakpointEntrie->breakpointLength = 1;
++                pTempBreakpointEntrie->breakpointCr3 = BreakpointCr3;
++                pTempBreakpointEntrie->breakpointAccessType = FDP_EXECUTE_BP;
++                pTempBreakpointEntrie->breakpointPageSize = pTempHardwarePage->PageSize;
++                pTempBreakpointEntrie->breakpointHardwarePage = pTempHardwarePage;
++                //Save the original byte
++                pTempBreakpointEntrie->breakpointOriginalByte =
++                    pTempHardwarePage->R3Ptr[(GCPhys & (pTempHardwarePage->PageSize - 1))];  // FDPTODO change % to &
++                //Install a HLT in the new page
++                pTempHardwarePage->R3Ptr[(GCPhys & (pTempHardwarePage->PageSize - 1))] = 0xCC;
++                pTempBreakpointEntrie->breakpointGCPhysAreaCount = 1;
++                pTempBreakpointEntrie->breakpointGCPhysAreaTable = (GCPhysArea_t*)malloc(1 * sizeof(GCPhysArea_t));
++                pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].Start = GCPhys;
++                pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].End = GCPhys + 1;
++
++                //Set page as original and read/write
++                PGMShwSetHCPage(pVCpu, GCPhys, origHCPhys);
++                PGMShwPresent(pVCpu, GCPhys);
++                PGMShwWrite(pVCpu, GCPhys);
++                PGMShwNoExecute(pVCpu, GCPhys);
++                //Set page as breakable !
++                PGMShwSetBreakable(pVCpu, GCPhys, true);
++                //Invalidate the page !
++                PGMShwInvalidate(pVCpu, GCPhys);
++
++                return BreakpointId;
++            }
++            else
++            {
++                LogRel(("[WDEBUG] Failed to Allocate HardwarePage\n"));
++                return -1;
++            }
++        }
++    }
++    return -1;
++}
++
++void ApplyBreakpointOnPage(PVM pVM, PVMCPU pVCpu, uint64_t GCPhys, uint8_t BreakpointAccessType)
++{
++    //No access at all for FDP_READ_BP
++    if (BreakpointAccessType & FDP_READ_BP)
++    {
++        PGMShwNoPresent(pVCpu, GCPhys);
++        PGMShwNoWrite(pVCpu, GCPhys);
++        PGMShwNoExecute(pVCpu, GCPhys);
++    }
++    if (BreakpointAccessType & FDP_WRITE_BP)
++        PGMShwNoWrite(pVCpu, GCPhys);
++    if (BreakpointAccessType & FDP_EXECUTE_BP)
++        PGMShwNoExecute(pVCpu, GCPhys);
++
++    //Set the page as Breakable page
++    PGMShwSetBreakable(pVCpu, GCPhys, true);
++    //Save the final page rights
++    PGMShwSaveRights(pVCpu, GCPhys);
++    //Invalidate the page !
++    PGMShwInvalidate(pVCpu, GCPhys);
++}
++
++void DisableBreakpointOnPage(PVM pVM, PVMCPU pVCpu, uint64_t GCPhys)
++{
++    PGMShwPresent(pVCpu, GCPhys);
++    PGMShwWrite(pVCpu, GCPhys);
++    PGMShwExecute(pVCpu, GCPhys);
++
++    //Set the page as Standard page
++    PGMShwSetBreakable(pVCpu, GCPhys, false);
++    //Save the final page rights
++    PGMShwSaveRights(pVCpu, GCPhys);
++    //Invalidate the page !
++    PGMShwInvalidate(pVCpu, GCPhys);
++}
++
++#define MIN(a, b) (((a) < (b)) ? (a) : (b))
++
++void AddGCPhysAreaInBreakpoint(BreakpointEntrie_t* pTempBreakpointEntrie, uint64_t Start, uint64_t End)
++{
++    if (pTempBreakpointEntrie)
++    {
++        int CurrentGCPhysAreaIndex = pTempBreakpointEntrie->breakpointGCPhysAreaCount;
++        //LogRel(("[WDEBUG] %d. %p->%p\n", CurrentGCPhysAreaIndex, Start, End));
++        pTempBreakpointEntrie->breakpointGCPhysAreaTable[CurrentGCPhysAreaIndex].Start = Start;
++        pTempBreakpointEntrie->breakpointGCPhysAreaTable[CurrentGCPhysAreaIndex].End = End;
++        pTempBreakpointEntrie->breakpointGCPhysAreaCount++;
++    }
++}
++
++void DisableAllPageBreakpoint(PVM pVM, PVMCPU pVCpu)
++{
++    //Restore all rights for pages in breakpoint
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true &&
++            pTempBreakpointEntrie->breakpointType == FDP_PAGEHBP && pTempBreakpointEntrie->breakpointGCPhysAreaTable)
++        {
++
++            for (uint64_t j = 0; j < pTempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                DisableBreakpointOnPage(pVM, pVCpu, pTempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start);
++            }
++        }
++    }
++}
++
++void EnableAllPageBreakpoint(PVM pVM, PVMCPU pVCpu)
++{
++    //Restore all rights for pages in breakpoint
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true &&
++            pTempBreakpointEntrie->breakpointType == FDP_PAGEHBP && pTempBreakpointEntrie->breakpointGCPhysAreaTable)
++        {
++            //Apply on pages
++            for (uint64_t j = 0; j < pTempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                ApplyBreakpointOnPage(pVM, pVCpu, pTempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start,
++                                      pTempBreakpointEntrie->breakpointAccessType);
++            }
++        }
++    }
++}
++
++void InstallAllPageBreakpoint(PVM pVM, PVMCPU pVCpu)
++{
++    //Restore all rights for pages in breakpoint
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true &&
++            pTempBreakpointEntrie->breakpointType == FDP_PAGEHBP && pTempBreakpointEntrie->breakpointGCPhysAreaTable)
++        {
++            for (uint64_t j = 0; j < pTempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                DisableBreakpointOnPage(pVM, pVCpu, pTempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start);
++            }
++            if (pTempBreakpointEntrie->breakpointGCPhysAreaTable)
++                free(pTempBreakpointEntrie->breakpointGCPhysAreaTable);
++            pTempBreakpointEntrie->breakpointGCPhysAreaCount = 0;
++            pTempBreakpointEntrie->breakpointGCPhysAreaTable = NULL;
++        }
++    }
++
++    //Remove rights for pages in breakpoint
++    for (int BreakpointId = 0; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true && pTempBreakpointEntrie->breakpointType == FDP_PAGEHBP)
++        {
++            uint64_t BreakpointLength = pTempBreakpointEntrie->breakpointLength;
++            if (pTempBreakpointEntrie->breakpointGCPtr > 0)
++            {  //VirtualAddress Breakpoint
++                uint64_t GCPhys;
++                uint64_t GCPtr = pTempBreakpointEntrie->breakpointGCPtr;
++                int      MaxGCPhysAreaCount = (BreakpointLength / _4K) + 1;
++                pTempBreakpointEntrie->breakpointGCPhysAreaTable =
++                    (GCPhysArea_t*)malloc(MaxGCPhysAreaCount * sizeof(GCPhysArea_t));
++
++                //First chunk Page
++                int      rc = PGMPhysGCPtr2GCPhys(pVCpu, GCPtr, &GCPhys);
++                uint64_t GCPhysPageEnd = (GCPhys & 0xFFFFFFFFFFFFF000) + _4K;
++                uint64_t AlreadyBreakpointSize = MIN(GCPhysPageEnd - GCPhys, BreakpointLength);
++                if (RT_SUCCESS(rc))
++                {
++                    AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, GCPhys, GCPhys + AlreadyBreakpointSize);
++                }
++                //Intermediate complete page
++                int64_t LeftToBreakpoint = BreakpointLength - AlreadyBreakpointSize;
++                while (LeftToBreakpoint >= _4K)
++                {  //More than 1 page to breakpoint !
++                    rc = PGMPhysGCPtr2GCPhys(pVCpu, GCPtr + AlreadyBreakpointSize, &GCPhys);
++                    if (RT_SUCCESS(rc))
++                    {
++                        AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, GCPhys, GCPhys + _4K);
++                    }
++                    LeftToBreakpoint = LeftToBreakpoint - _4K;
++                    AlreadyBreakpointSize = AlreadyBreakpointSize + _4K;
++                }
++
++                //Last chunk page
++                if (LeftToBreakpoint > 0)
++                {  //Left breakpoint bytes
++                    rc = PGMPhysGCPtr2GCPhys(pVCpu, GCPtr + AlreadyBreakpointSize, &GCPhys);
++                    if (RT_SUCCESS(rc))
++                    {
++                        AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, GCPhys, GCPhys + LeftToBreakpoint);
++                    }
++                }
++            }
++            else
++            {  //PhysicalAddress Breakpoint
++                uint64_t LeftToBreakpoint = 0;
++                int      MaxGCPhysAreaCount = (BreakpointLength / _4K) + 1;
++                pTempBreakpointEntrie->breakpointGCPhysAreaTable =
++                    (GCPhysArea_t*)malloc(MaxGCPhysAreaCount * sizeof(GCPhysArea_t));
++                uint64_t GCPhysPageEnd = (pTempBreakpointEntrie->breakpointGCPhys & ~(_4K - 1)) + _4K;
++                uint64_t LastPageEnd = MIN(GCPhysPageEnd, pTempBreakpointEntrie->breakpointGCPhys + BreakpointLength);
++                LeftToBreakpoint = BreakpointLength - (LastPageEnd - pTempBreakpointEntrie->breakpointGCPhys);
++                AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, pTempBreakpointEntrie->breakpointGCPhys, LastPageEnd);
++                while (LeftToBreakpoint >= _4K)
++                {
++                    AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, LastPageEnd, LastPageEnd + _4K);
++                    LeftToBreakpoint -= _4K;
++                    LastPageEnd += _4K;
++                }
++                if (LeftToBreakpoint > 0)
++                {
++                    AddGCPhysAreaInBreakpoint(pTempBreakpointEntrie, LastPageEnd, LastPageEnd + LeftToBreakpoint);
++                }
++            }
++
++            //Apply on pages
++            for (uint64_t j = 0; j < pTempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                ApplyBreakpointOnPage(pVM, pVCpu, pTempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start,
++                                      pTempBreakpointEntrie->breakpointAccessType);
++            }
++        }
++    }
++
++    return;
++}
++
++bool IsOneCPURunning(PUVM pUVM)
++{
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        if (!(pUVM->aCpus[i].pVCpu->fdpstate.s.u8StateBitmap & FDP_STATE_PAUSED))
++        {
++            return true;
++        }
++    }
++    return false;
++}
++
++VMMR3_INT_DECL(int)
++VMR3AddPageBreakpoint(PUVM pUVM, PVMCPU pVCpu, uint8_t BreakpointId, uint8_t BreakpointAccessType,
++                      uint8_t BreakpointAddressType, uint64_t BreakpointAddress, uint64_t BreakpointLength)
++{  // FDPTODO: Move it to VMMAll !
++    if (IsOneCPURunning(pUVM) == true)
++    {
++        //NO WAY !!!!!!
++        return -1;
++    }
++
++    PVM pVM = pUVM->pVM;
++
++    BreakpointEntrie_t* pTempBreakpointEntrie = NULL;
++    //If not a reserved to the guest breakpoint
++    if (BreakpointId < 0 || BreakpointId > 3)
++    {
++        bool BreakpointIdFound = false;
++        for (BreakpointId = 4 * pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++        {
++            pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++            //Find a free breakpoint
++            if (pTempBreakpointEntrie->breakpointActivated == false)
++            {
++                break;
++            }
++        }
++    }
++    else
++    {
++        pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++    }
++
++    if (pTempBreakpointEntrie != NULL && pTempBreakpointEntrie->breakpointActivated == false)
++    {
++        uint64_t GCPhys;
++        uint64_t GCPtr = 0;
++        if (BreakpointAddressType == FDP_VIRTUAL_ADDRESS)
++        {  //Virtual
++            GCPtr = BreakpointAddress;
++            int rc = PGMPhysGCPtr2GCPhys(pVCpu, BreakpointAddress, &GCPhys);
++            if (RT_FAILURE(rc))
++            {
++                //LogRel(("Fail to convert GCPtr(%p) -> GCphys\n", BreakpointAddress));
++                return -1;
++            }
++        }
++        else
++        {  //Physical
++            GCPhys = BreakpointAddress;
++        }
++
++        pVM->bp.l[BreakpointId].breakpointActivated = true;
++        pVM->bp.l[BreakpointId].breakpointGCPtr = GCPtr;
++        pVM->bp.l[BreakpointId].breakpointGCPhys = GCPhys;
++        pVM->bp.l[BreakpointId].breakpointType = FDP_PAGEHBP;
++        pVM->bp.l[BreakpointId].breakpointLength = BreakpointLength;
++        pVM->bp.l[BreakpointId].breakpointAccessType = BreakpointAccessType;
++        pVM->bp.l[BreakpointId].breakpointPageSize = _4K;
++
++        InstallAllPageBreakpoint(pVM, pVCpu);
++        return BreakpointId;
++    }
++    return -1;
++}
++
++// FDPTODO: Move it to VMMAll !
++VMMR3_INT_DECL(bool)
++VMR3RemoveBreakpoint(PUVM pUVM, int BreakpointId)
++{
++
++    if (BreakpointId < 0 || BreakpointId > FDPVBOX_MAX_BREAKPOINT_ID)
++    {
++        return false;
++    }
++
++    //If one Cpu is running, we can't remove a breakpoint !
++    if (IsOneCPURunning(pUVM) == true)
++    {
++        return false;
++    }
++
++    PVM    pVM = pUVM->pVM;
++    PVMCPU pVCpu = pUVM->aCpus[0].pVCpu;
++
++    //Restore OriginalPage for all SoftHyperBreakpoint
++    VMR3RestoreAllOriginalPage(pVM->pUVM, true, true, false);
++
++    BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++
++    if (pTempBreakpointEntrie->breakpointActivated == true)
++    {
++        //Set the breakpoint as disabled
++        pTempBreakpointEntrie->breakpointActivated = false;
++
++        switch (pTempBreakpointEntrie->breakpointType)
++        {
++        case FDP_PAGEHBP:
++        {
++            //Enable all rights for page in this breakpoint
++            for (uint64_t j = 0; j < pTempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
++            {
++                DisableBreakpointOnPage(pVM, pVCpu, pTempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start);
++            }
++            //Enable all other page Breakpoint
++            InstallAllPageBreakpoint(pVM, pVCpu);
++            break;
++        }
++        case FDP_SOFTHBP:
++        {
++            pTempBreakpointEntrie->breakpointHardwarePage->ReferenceCount--;
++            if (pTempBreakpointEntrie->breakpointHardwarePage->ReferenceCount == 0)
++            {
++                uint64_t GCPhys = pTempBreakpointEntrie->breakpointGCPhysAreaTable[0].Start;
++                LogRelDebug(("[WDEBUG] HardwarePage->ReferenceCount == 0\n"));
++                //No more breakpoint use this HardwarePage !
++                //Restore Original page
++                PGMShwSetHCPage(pVCpu, GCPhys, pTempBreakpointEntrie->breakpointOrigHCPhys);
++                PGMShwPresent(pVCpu, GCPhys);
++                PGMShwWrite(pVCpu, GCPhys);
++                PGMShwExecute(pVCpu, GCPhys);
++
++                PGMShwSetBreakable(pVCpu, GCPhys, false);
++
++                PGMShwInvalidate(pVCpu, GCPhys);
++            }
++            break;
++        }
++        default:
++            break;
++        }
++
++        pTempBreakpointEntrie->breakpointTag = 0;
++        pTempBreakpointEntrie->breakpointGCPtr = 0;
++        pTempBreakpointEntrie->breakpointType = 0;
++        pTempBreakpointEntrie->breakpointLength = 0;
++        pTempBreakpointEntrie->breakpointAccessType = 0x0;
++        pTempBreakpointEntrie->breakpointOrigHCPhys = 0x0;
++        pTempBreakpointEntrie->breakpointOriginalByte = 0x0;
++        pTempBreakpointEntrie->breakpointHardwarePage = NULL;
++        pTempBreakpointEntrie->breakpointPageSize = 0x0;
++
++        if (pTempBreakpointEntrie->breakpointGCPhysAreaTable)
++        {
++            free(pTempBreakpointEntrie->breakpointGCPhysAreaTable);
++        }
++
++        pTempBreakpointEntrie->breakpointGCPhysAreaCount = 0;
++        pTempBreakpointEntrie->breakpointGCPhysAreaTable = NULL;
++        return true;
++    }
++    return false;
++}
++
++VMMDECL(int)
++VMR3PhysSimpleReadGCPhysU(PUVM pUVM, void* pvDst, RTGCPHYS GCPhysSrc, size_t cb)
++{
++    return PGMPhysSimpleReadGCPhys(pUVM->pVM, pvDst, GCPhysSrc, cb);
++}
++
++VMMDECL(int)
++VMR3PhysSimpleWriteGCPhysU(PUVM pUVM, const void* pvBuf, RTGCPHYS GCPhys, size_t cbWrite)
++{
++    return PGMPhysSimpleWriteGCPhys(pUVM->pVM, GCPhys, pvBuf, cbWrite);
++}
++
++VMMDECL(int)
++VMR3SingleStep(PUVM pUVM, PVMCPU pVCpu)
++{
++    //Dont try to single step on a running
++    if (pVCpu->fdpstate.s.u8StateBitmap & FDP_STATE_PAUSED)
++    {
++        pVCpu->fdpstate.s.bSingleStepRequired = true;
++        while (pVCpu->fdpstate.s.bSingleStepRequired)
++        {
++            //Yield
++            RTThreadSleep(0);
++        }
++        return 0;
++    }
++    return -1;
++}
++
++VMMDECL(int)
++VMR3BreakNoLock(PUVM pUVM)
++{
++    //LogRel(("[WDEBUG] BREAK !\n"));
++
++    //Wait for all cpu paused
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        pUVM->aCpus[i].pVCpu->fdpstate.s.bPauseRequired = true;
++
++        //Inject a IPI
++        SUPR3CallVMMR0Ex(pUVM->pVM->pVMR0ForCall, pUVM->aCpus[i].pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_WAKE_UP, 0, NULL);
++        SUPR3CallVMMR0Ex(pUVM->pVM->pVMR0ForCall, pUVM->aCpus[i].pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_POKE, 0, NULL);
++
++        do
++        {
++            //LogRel(("[WDEBUG] Waiting for CPU[%d] to pause state %02x\n", i, pUVM->aCpus[i].pVCpu->fdpstate.s.u8StateBitmap));
++            //RTThreadSleep(10);
++        } while (!(pUVM->aCpus[i].pVCpu->fdpstate.s.u8StateBitmap & FDP_STATE_PAUSED));
++        //LogRel(("[WDEBUG] CPU[%d] is paused !\n", i));
++    }
++
++    //LogRel(("[WDEBUG] All Cpus are PAUSED !\n"));
++    return 0;
++}
++
++VMMDECL(int)
++VMR3Break(PUVM pUVM)
++{
++    RTSpinlockAcquire(pUVM->pVM->fdpstate.s.CpuLock);
++
++    VMR3BreakNoLock(pUVM);
++
++    RTSpinlockRelease(pUVM->pVM->fdpstate.s.CpuLock);
++    return 0;
++}
++
++VMMDECL(int)
++VMR3ContinueNoWaitNoLock(PUVM pUVM)
++{
++    //LogRel(("[WDEBUG] VMR3ContinueNoWaitNoLock !\n"));
++
++    pUVM->pVM->fdpstate.s.u8StateBitmap &= ~FDP_STATE_DEBUGGER_ALERTED;
++
++    //Wait for all CPUs resumed
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU   pVCpu = pUVM->aCpus[i].pVCpu;
++        uint64_t oldu64TickCount = pVCpu->fdpstate.s.u64TickCount;
++        pVCpu->fdpstate.s.bPauseRequired = false;
++        //VMCPU_FF_SET(pVCpu, VMCPU_FF_EXTERNAL_SUSPENDED_MASK);
++    }
++
++    return 0;
++}
++
++VMMDECL(int)
++VMR3ContinueWaitNoLock(PUVM pUVM)
++{
++    //LogRel(("[WDEBUG] VMR3ContinueWaitNoLock !\n"));
++
++    pUVM->pVM->fdpstate.s.u8StateBitmap &= ~FDP_STATE_DEBUGGER_ALERTED;
++
++    //Wait for all CPUs resumed
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        PVMCPU   pVCpu = pUVM->aCpus[i].pVCpu;
++        uint64_t oldu64TickCount = pVCpu->fdpstate.s.u64TickCount;
++        pVCpu->fdpstate.s.bPauseRequired = false;
++        //VMCPU_FF_SET(pVCpu, VMCPU_FF_EXTERNAL_SUSPENDED_MASK);
++        while (oldu64TickCount == pVCpu->fdpstate.s.u64TickCount)
++        {
++            //Yield
++            RTThreadSleep(0);
++        }
++    }
++
++    return 0;
++}
++
++VMMDECL(int)
++VMR3Continue(PUVM pUVM)
++{
++    RTSpinlockAcquire(pUVM->pVM->fdpstate.s.CpuLock);
++
++    VMR3ContinueWaitNoLock(pUVM);
++
++    RTSpinlockRelease(pUVM->pVM->fdpstate.s.CpuLock);
++    return 0;
++}
++
++VMMDECL(uint8_t)
++VMR3GetFDPState(PUVM pUVM)
++{
++    uint8_t u8OldState = 0;
++    bool    bIsPaused = true;
++    bool    bIsBreakpointHitted = false;
++    for (uint32_t i = 0; i < VMR3GetCPUCount(pUVM); i++)
++    {
++        //If one CPU is Running not in pause
++        if (!(pUVM->aCpus[i].pVCpu->fdpstate.s.u8StateBitmap & FDP_STATE_PAUSED))
++        {
++            bIsPaused = false;
++        }
++        //If one CPU hit a breakpoint
++        if (pUVM->aCpus[i].pVCpu->fdpstate.s.u8StateBitmap & FDP_STATE_BREAKPOINT_HIT)
++        {
++            bIsBreakpointHitted = true;
++        }
++    }
++
++    if (bIsPaused)
++    {
++        u8OldState |= FDP_STATE_PAUSED;
++        if (bIsBreakpointHitted)
++        {
++            u8OldState |= FDP_STATE_BREAKPOINT_HIT;
++        }
++    }
++
++    if (pUVM->pVM->fdpstate.s.u8StateBitmap & FDP_STATE_DEBUGGER_ALERTED)
++    {
++        u8OldState |= FDP_STATE_DEBUGGER_ALERTED;
++    }
++    if (u8OldState & FDP_STATE_BREAKPOINT_HIT)
++    {
++        pUVM->pVM->fdpstate.s.u8StateBitmap |= FDP_STATE_DEBUGGER_ALERTED;
++    }
++    return u8OldState;
++}
++
++VMMDECL(bool)
++VMR3DisableAllMsrBreakpoint(PVM pVM)
++{
++    for (int BreakpointId = 4 * pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointActivated == true && pTempBreakpointEntrie->breakpointType == FDP_MSRHBP)
++        {
++            pTempBreakpointEntrie->breakpointActivated = false;
++        }
++    }
++    return 0;
++}
++
++VMMDECL(bool)
++VMR3EnableAllMsrBreakpoint(PVM pVM)
++{
++    for (int BreakpointId = 4 * pVM->cCpus; BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID; BreakpointId++)
++    {
++        BreakpointEntrie_t* pTempBreakpointEntrie = &pVM->bp.l[BreakpointId];
++        if (pTempBreakpointEntrie->breakpointType == FDP_MSRHBP)
++        {
++            pTempBreakpointEntrie->breakpointActivated = true;
++        }
++    }
++    return 0;
++}
++
++VMMDECL(bool)
++VMR3HandleSingleStep(PVM pVM, PVMCPU pVCpu)
++{
++    //Check if Single step is required !
++    if (pVCpu->fdpstate.s.bSingleStepRequired)
++    {
++
++        TMR3NotifyResume(pVM, pVCpu);
++
++        LogRelDebug(("[WDEBUG] CPU[%d] bSingleStepRequired !\n", pVCpu->idCpu));
++
++        //Restore Original Page with Execute right, avoid Breakpoint in SingleStep
++        VMR3RestoreAllOriginalPage(pVM->pUVM, true, true, true);
++        //Disable All Msr Breakpoint, avoid Breakpoint in Breakpoint
++        VMR3DisableAllMsrBreakpoint(pVM);
++        //Disable PageHyperBreapoint
++        DisableAllPageBreakpoint(pVM, pVCpu);
++        //Disable Debug Register
++        uint64_t OldDr7 = CPUMGetGuestDR7(pVCpu);
++        CPUMSetGuestDR7(pVCpu, 0x400);
++
++        int rc = 0;
++        //First call is for instruction that jump on self "jmp -2 (ebfe)"
++        rc = VBOXSTRICTRC_VAL(EMR3HmSingleInstruction(pVM, pVCpu, 0));
++
++        LogRelDebug(("[WDEBUG] CPU[%d] Single Step => %d!\n", pVCpu->idCpu, rc));
++
++        if (VM_FF_IS_ANY_SET(pVM, VM_FF_ALL_REM_MASK) || VMCPU_FF_IS_ANY_SET(pVCpu, VMCPU_FF_ALL_REM_MASK))
++        {
++            EMR3ProcessForcedAction(pVM, pVCpu, rc);
++        }
++
++        //If rc == 0 then it failed, we have to call SingleInstruction whith RIP_CHANGE
++        if (rc == 0)
++        {
++            rc = VBOXSTRICTRC_VAL(EMR3HmSingleInstruction(pVM, pVCpu, EM_ONE_INS_FLAGS_RIP_CHANGE));
++
++            LogRelDebug(("[WDEBUG] CPU[%d] Single Step => %d!\n", pVCpu->idCpu, rc));
++
++            if (VM_FF_IS_ANY_SET(pVM, VM_FF_ALL_REM_MASK) || VMCPU_FF_IS_ANY_SET(pVCpu, VMCPU_FF_ALL_REM_MASK))
++            {
++                EMR3ProcessForcedAction(pVM, pVCpu, rc);
++            }
++        }
++
++        //Restore Original Page, avoid VirtualBox being crazy with unknown HCPhys on SoftHyperBreakpoint
++        VMR3RestoreAllOriginalPage(pVM->pUVM, true, true, false);
++        //Enable All Msr Breakpoint
++        VMR3EnableAllMsrBreakpoint(pVM);
++        //Enable All PageHyperBreakpoint
++        EnableAllPageBreakpoint(pVM, pVCpu);
++        //Enable Debug Register
++        CPUMSetGuestDR7(pVCpu, OldDr7);
++
++        TMR3NotifySuspend(pVM, pVCpu);
++
++        pVCpu->fdpstate.s.bSingleStepRequired = false;  //Single step no more required !
++        return true;
++    }
++    return false;
++}
++
++VMMDECL(int)
++VMR3InjectInterrupt(PVM pVM, PVMCPU pVCpu, uint32_t enmXcpt, uint32_t uErr, uint64_t Cr2)
++{
++    // FDPTODO
++    return -1;
++}
++
++#include <VBox/vmm/pdmusb.h>
++
++VMMDECL(int)
++VMR3ClearInterrupt(PUVM pUVM, PVMCPU pVCpu)
++{
++    //return PDMR3UsbHasHub(pUVM);
++    PDMR3PowerOn(pUVM->pVM);
++    return 0;
++}
++
++VMMDECL(void)
++VMR3SetFDPShm(PUVM pUVM, void* pFdpShm)
++{
++    pUVM->pVM->fdpstate.s.pFdpShm = pFdpShm;
++}
++
++VMMDECL(bool)
++VMR3EnterPause(PVM pVM, PVMCPU pVCpu)
++{
++    if (pVCpu->idCpu == 0)
++    {
++        //Update FDP_CPU_CTX
++        VMR3UpdateFdpCpuCtx(pVCpu);
++        TMR3NotifySuspend(pVM, pVCpu);
++
++        //Active wait
++        uint32_t u32WaitCount = 0;
++        while (pVCpu->fdpstate.s.bPauseRequired == true)
++        {
++            if (VMR3HandleSingleStep(pVM, pVCpu) == true)
++            {
++                //Update FDP_CPU_CTX
++                VMR3UpdateFdpCpuCtx(pVCpu);
++                u32WaitCount = 0;
++            }
++            //Powersaving :)
++            if ((u32WaitCount & 0xFFFFFF) == 0xFFFFFF)
++            {
++                RTThreadSleep(5);
++            }
++            else
++            {
++                u32WaitCount++;
++            }
++        }
++
++        TMR3NotifyResume(pVM, pVCpu);
++
++        //ProcessForcedAction avoid freeze in CLI...BP...SAVE...STI
++        if (VM_FF_IS_ANY_SET(pVM, VM_FF_ALL_REM_MASK) || VMCPU_FF_IS_ANY_SET(pVCpu, VMCPU_FF_ALL_REM_MASK))
++        {
++            EMR3ProcessForcedAction(pVM, pVCpu, 0);
++        }
++
++        //Update FDP_CPU_CTX
++        VMR3UpdateFdpCpuCtx(pVCpu);
++    }
++    return true;
++}
++
++#include "VMMInternal.h"
++
++#define DR0_ENABLED 0x3
++#define DR1_ENABLED 0xC
++#define DR2_ENABLED 0x30
++#define DR3_ENABLED 0xC0
++
++#define DR_READ    0x03
++#define DR_WRITE   0x01
++#define DR_EXECUTE 0x00
++
++/*
++* @brief Convert a Debug Register Breakpoint Type to FDP Breakpoint Type
++*
++*/
++int GetDrType(uint64_t DrType)
++{
++    switch (DrType)
++    {
++    case DR_READ:
++        return FDP_READ_BP;
++    case DR_WRITE:
++        return FDP_WRITE_BP;
++    case DR_EXECUTE:
++        return FDP_EXECUTE_BP;
++    }
++    return 0;
++}
++
++/*
++ * @brief Get the Breakpoint Lenght from Debug Register Breakpoint Lenght
++ */
++uint64_t GetDrLength(uint64_t DrLength)
++{
++    switch (DrLength)
++    {
++    case 0:
++        return 1;
++    case 1:
++        return 2;
++    case 2:
++        return 8;
++    case 3:
++        return 4;
++    }
++    return 1;
++}
++
++VMMR3DECL(uint32_t)
++VMR3GetCPUCount(PUVM pUVM)
++{
++    return pUVM->pVM->cCpus;
++}
++/*ENDFDPCODE*/
+ 
+ /**
+  * Halted VM Wait.
+@@ -1102,6 +2177,129 @@ VMMR3_INT_DECL(void) VMR3NotifyCpuFFU(PUVMCPU pUVCpu, uint32_t fFlags)
+  */
+ VMMR3_INT_DECL(int) VMR3WaitHalted(PVM pVM, PVMCPU pVCpu, bool fIgnoreInterrupts)
+ {
++    /*FDPCODE*/
++    if (pVCpu->fdpstate.s.bInstallDrBreakpointRequired)
++    {
++        LogRelDebug(("[WDEBUG] CPU[%d] Entering bInstallDrBreakpointRequired !!\n", pVCpu->idCpu));
++        pVCpu->fdpstate.s.u8StateBitmap |= FDP_STATE_PAUSED;
++
++        //Break all CPUs
++        VMR3Break(pVM->pUVM);
++
++        //Remove all breakpoint
++        for (int BreakpointId = (0 + (pVCpu->idCpu * 4)); BreakpointId < (int)(4 + (pVCpu->idCpu * 4)); BreakpointId++)
++        {
++            VMR3RemoveBreakpoint(pVM->pUVM, BreakpointId);
++        }
++
++        //Install all breakpoint
++        LogRelDebug(("[WDEBUG] CPU[%d] aGuestDr[0] %p\n", pVCpu->idCpu, pVCpu->fdpstate.s.aGuestDr[0]));
++        LogRelDebug(("[WDEBUG] CPU[%d] aGuestDr[1] %p\n", pVCpu->idCpu, pVCpu->fdpstate.s.aGuestDr[1]));
++        LogRelDebug(("[WDEBUG] CPU[%d] aGuestDr[2] %p\n", pVCpu->idCpu, pVCpu->fdpstate.s.aGuestDr[2]));
++        LogRelDebug(("[WDEBUG] CPU[%d] aGuestDr[3] %p\n", pVCpu->idCpu, pVCpu->fdpstate.s.aGuestDr[3]));
++        LogRelDebug(("[WDEBUG] CPU[%d] aGuestDr[7] %p\n", pVCpu->idCpu, pVCpu->fdpstate.s.aGuestDr[7]));
++
++        LogRelDebug(("[WDEBUG] ABCDE %p\n", pVM->pUVM));
++        //Update Guest Breakpoint
++        for (uint8_t i = 0; i < 4; i++)
++        {
++            if (pVCpu->fdpstate.s.aGuestDr[7] & (0x3 << (i * 2)))
++            {
++                uint8_t TEMP_DRX_LENGTH = (pVCpu->fdpstate.s.aGuestDr[7] & (0x3 << (18 + i * 4))) >> (18 + i * 4);
++                uint8_t DRX_LENGTH = GetDrLength(TEMP_DRX_LENGTH);
++                uint8_t TEMP_DRX_TYPE = (pVCpu->fdpstate.s.aGuestDr[7] & (0x3 << (16 + i * 4))) >> (16 + i * 4);
++                int     DRX_TYPE = GetDrType(TEMP_DRX_TYPE);
++
++                int BreakpointId = -1;
++                if (DRX_TYPE > 0)
++                {
++                    BreakpointId = VMR3AddPageBreakpoint(pVM->pUVM, pVCpu, i + (pVCpu->idCpu * 4), DRX_TYPE,
++                                                         FDP_VIRTUAL_ADDRESS, pVCpu->fdpstate.s.aGuestDr[i], DRX_LENGTH);
++                }
++                //LogRel(("INSTALL DR[%d] %d\n", i, BreakpointId));
++            }
++        }
++
++        pVCpu->fdpstate.s.u8StateBitmap &= ~FDP_STATE_PAUSED;
++        pVCpu->fdpstate.s.bPauseRequired = false;
++        pVCpu->fdpstate.s.bInstallDrBreakpointRequired = false;
++
++        //Continue all CPUs
++        VMR3ContinueNoWaitNoLock(pVM->pUVM);
++
++        LogRelDebug(("[WDEBUG] CPU[%d] Leaving bInstallDrBreakpointRequired !!\n", pVCpu->idCpu));
++        return VINF_EM_RESCHEDULE;
++    }
++
++    if (pVCpu->fdpstate.s.bHardHyperBreakPointHitted || pVCpu->fdpstate.s.bPageHyperBreakPointHitted ||
++        pVCpu->fdpstate.s.bSoftHyperBreakPointHitted || pVCpu->fdpstate.s.bMsrHyperBreakPointHitted ||
++        pVCpu->fdpstate.s.bCrHyperBreakPointHitted)
++    {
++
++        //Update FDP_CPU_CTX
++        VMR3UpdateFdpCpuCtx(pVCpu);
++
++        if (pVCpu->fdpstate.s.bPageHyperBreakPointHitted)
++        {
++            LogRel(("[WDEBUG] CPU[%d] bPageHyperBreakPointHitted !!\n", pVCpu->idCpu));
++        }
++        if (pVCpu->fdpstate.s.bSoftHyperBreakPointHitted)
++        {
++            LogRel(("[WDEBUG] CPU[%d] bSoftHyperBreakPointHitted !!\n", pVCpu->idCpu));
++        }
++        if (pVCpu->fdpstate.s.bHardHyperBreakPointHitted)
++        {
++            LogRel(("[WDEBUG] CPU[%d] bHardHyperBreakPointHitted !!\n", pVCpu->idCpu));
++            pVCpu->fdpstate.s.u8StateBitmap |= FDP_STATE_HARD_BREAKPOINT_HIT;
++        }
++        if (pVCpu->fdpstate.s.bMsrHyperBreakPointHitted)
++        {
++            LogRel(("[WDEBUG] CPU[%d] bMsrHyperBreakPointHitted !!\n", pVCpu->idCpu));
++        }
++        if (pVCpu->fdpstate.s.bCrHyperBreakPointHitted)
++        {
++            LogRel(("[WDEBUG] CPU[%d] bCrHyperBreakPointHitted !!\n", pVCpu->idCpu));
++        }
++
++        //Restore OriginalPage for all SoftHyperBreakpoint
++        VMR3RestoreAllOriginalPage(pVM->pUVM, true, true, false);
++
++        //Set the CPU as PAUSED and BREAKPOINT_HITTED
++        pVCpu->fdpstate.s.u8StateBitmap |= FDP_STATE_BREAKPOINT_HIT;
++        pVCpu->fdpstate.s.u8StateBitmap |= FDP_STATE_PAUSED;
++
++        //Break all CPUs
++        VMR3Break(pVM->pUVM);
++
++        // FDPTODO: Protect this !
++        FDP_SHM* pFdpShm = (FDP_SHM*)pVM->fdpstate.s.pFdpShm;
++        FDP_SetStateChanged(pFdpShm);
++
++        //Waiting for debugger resume !
++        VMR3EnterPause(pVM, pVCpu);
++
++        bool bMsrHyperBreakpointHitted = pVCpu->fdpstate.s.bMsrHyperBreakPointHitted;
++
++        //We are ready to go !
++        pVCpu->fdpstate.s.bHardHyperBreakPointHitted = false;
++        pVCpu->fdpstate.s.bPageHyperBreakPointHitted = false;
++        pVCpu->fdpstate.s.bSoftHyperBreakPointHitted = false;
++        pVCpu->fdpstate.s.bMsrHyperBreakPointHitted = false;
++        pVCpu->fdpstate.s.bCrHyperBreakPointHitted = false;
++        pVCpu->fdpstate.s.u8StateBitmap = 0;
++
++        //Single step for MsrBreakpoint... Maybe this stuff should be done in Winbagility...
++        if (bMsrHyperBreakpointHitted == true)
++        {
++            pVCpu->fdpstate.s.bSingleStepRequired = true;
++            VMR3HandleSingleStep(pVM, pVCpu);
++            pVCpu->fdpstate.s.bSingleStepRequired = false;
++        }
++
++        LogRel(("[WDEBUG] CPU[%d] Leaving Breakpoint !\n", pVCpu->idCpu));
++        return VINF_EM_RESCHEDULE;
++    }
++    /*ENDFDPCODE*/
+     LogFlow(("VMR3WaitHalted: fIgnoreInterrupts=%d\n", fIgnoreInterrupts));
+ 
+     /*
+diff --git a/src/VBox/VMM/VMMR3/VMM.cpp b/src/VBox/VMM/VMMR3/VMM.cpp
+index f89b2ae6..63c681b8 100644
+--- a/src/VBox/VMM/VMMR3/VMM.cpp
++++ b/src/VBox/VMM/VMMR3/VMM.cpp
+@@ -1101,6 +1101,10 @@ VMMR3_INT_DECL(int) VMMR3HmRunGC(PVM pVM, PVMCPU pVCpu)
+             if (RT_LIKELY(rc == VINF_SUCCESS))
+                 rc = pVCpu->vmm.s.iLastGZRc;
+ #endif
++            /*FDPCODE*/
++            if (pVCpu->fdpstate.s.bPauseRequired == true)
++                break;
++            /*ENDFDPCODE*/
+         } while (rc == VINF_EM_RAW_INTERRUPT_HYPER);
+ 
+ #if 0 /** @todo triggers too often */
+diff --git a/src/VBox/VMM/include/PGMInternal.h b/src/VBox/VMM/include/PGMInternal.h
+index 1a757db6..f2ca45c1 100644
+--- a/src/VBox/VMM/include/PGMInternal.h
++++ b/src/VBox/VMM/include/PGMInternal.h
+@@ -98,6 +98,9 @@
+  * Large page support enabled only on 64 bits hosts; applies to nested paging only.
+  */
+ #define PGM_WITH_LARGE_PAGES
++/*FDPCODE*/
++#undef PGM_WITH_LARGE_PAGES
++/*ENDFDPCODE*/
+ 
+ /**
+  * Enables optimizations for MMIO handlers that exploits X86_TRAP_PF_RSVD and

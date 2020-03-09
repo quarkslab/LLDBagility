@@ -16,7 +16,7 @@ LLDBagility implements a set of new LLDB commands that allows the debugger to:
 
 ## Files
 - [DWARFutils/](DWARFutils/): scripts for working with DWARF files
-- [FDPutils/](FDPutils/): Fast Debugging Protocol for macOS hosts and VirtualBox 5.2.14 and 6.0.8
+- [FDP/](FDP/): Fast Debugging Protocol for macOS hosts and VirtualBox 5.2.14 and 6.0.8
 - [KDKutils/](KDKutils/): scripts for working with Kernel Debug Kits (KDKs) and lldbmacros
 - [KDPutils/](KDPutils/): Python reimplementation of the KDP protocol
 - [LLDBagility/](LLDBagility/): the tool
@@ -29,7 +29,7 @@ In the Releases section:
 
 ## Requisites
 - A **recent version of macOS as host OS**, with the LLDB debugger (can be installed with e.g. `xcode-select --install`)
-- A working build of VirtualBox with the FDP patch for macOS hosts along with the PyFDP bindings (instructions in the dedicated [README](FDPutils/))
+- A working build of VirtualBox with the FDP patch for macOS hosts along with the PyFDP bindings (instructions in the dedicated [README](FDP/))
 - A VirtualBox VM with any version of macOS as guest OS
 - A copy of the macOS kernel binary of the guest (not needed if the guest has the same kernel of the host, or if the Kernel Debug Kit of the guest kernel is installed in the host)
 - The KDPutils Python package (instructions in the dedicated [README](KDPutils/))

@@ -1,20 +1,17 @@
-#include <stdlib.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "FDP.h"
 #include "FDP_structs.h"
 
-
-
 //TODO ! Unit Tests
 
 volatile uint32_t count_per_sec = 0;
-volatile bool bIsRunning = true;
+volatile bool     bIsRunning = true;
 
 bool FDP_DummyReadRegister(void* pUserHandle, uint32_t u32CpuId, FDP_Register u8RegisterId, uint64_t* pRegisterValue)
 {
@@ -22,7 +19,6 @@ bool FDP_DummyReadRegister(void* pUserHandle, uint32_t u32CpuId, FDP_Register u8
     count_per_sec = 0;
     return true;
 }
-
 
 bool FDP_DummyWriteRegister(void* pUserHandle, uint32_t u32CpuId, FDP_Register u8RegisterId, uint64_t pRegisterValue)
 {
@@ -38,8 +34,6 @@ bool FDP_DummyGetCpuCount(void* pUserHandle, uint32_t* pCpuCount)
     return true;
 }
 
-
-
 void* FDP_UnitTestClient(void* lpParameter)
 {
     FDP_SHM* pFDPClient = (FDP_SHM*)lpParameter;
@@ -49,21 +43,22 @@ void* FDP_UnitTestClient(void* lpParameter)
         printf(".");
     }
 
-    while(bIsRunning){
+    while (bIsRunning)
+    {
         FDP_WriteRegister(pFDPClient, 0, FDP_CS_REGISTER, 0xCAFECAFECAFECAFE);
     }
     return NULL;
 }
 
-
 void* counter_core(void* lpParameter)
 {
     FDP_SHM* pFDPClient = (FDP_SHM*)lpParameter;
     uint64_t count = 0;
-    for(int i=0; i<10; i++){
-    	printf("...\n");
+    for (int i = 0; i < 10; i++)
+    {
+        printf("...\n");
         sleep(1);
-	printf("Read...\n");
+        printf("Read...\n");
         FDP_ReadRegister(pFDPClient, 0, FDP_CS_REGISTER, &count);
         printf("%llu/sec\n", count);
     }
@@ -103,33 +98,34 @@ bool FDP_ClientServerTest()
         return false;
     }*/
     pthread_t threadServer = 0;
-    for(int i=0; i<1; i++){
-        if(pthread_create(&threadServer, NULL, FDP_UnitTestClient, pFDPServer) != 0){
+    for (int i = 0; i < 1; i++)
+    {
+        if (pthread_create(&threadServer, NULL, FDP_UnitTestClient, pFDPServer) != 0)
+        {
             printf("Failed to phread_create\n");
             return false;
         }
     }
 
     pthread_t threadCounter = 0;
-    if(pthread_create(&threadCounter, NULL, counter_core, pFDPServer) != 0){
+    if (pthread_create(&threadCounter, NULL, counter_core, pFDPServer) != 0)
+    {
         printf("Failed to phread_create\n");
         return -1;
     }
-
 
     if (FDP_ServerLoop(pFDPServer) == false)
     {
         printf("Failed to FDP_ServerLoop\n");
         return false;
     }
-    Clean:
+Clean:
     //Closing server
     FDPServerInterface.bIsRunning = false;
     //WaitForSingleObject(hThreadServer, INFINITE);
     pthread_join(threadServer, NULL);
     return true;
 }
-
 
 int main(int argc, char* argv[])
 {
