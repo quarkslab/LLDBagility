@@ -1,5 +1,4 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 import re
 import threading
 
@@ -157,7 +156,7 @@ class STUBVM(object):
     def get_kernel_version(self):
         logger.debug("get_kernel_version()")
         kernel_version = self.kernel_version
-        if b"stext" not in kernel_version:
+        if "stext" not in kernel_version:
             logger.debug(">  stext")
             # return the known kernel load address to make LLDB do less requests
             kernel_version += "; stext=0x{:016x}".format(self.kernel_load_vaddr)
@@ -557,9 +556,7 @@ def _find_kernel_version(vm):
             buf += vm.read_virtual_memory(vaddr, I386_PGBYTES)
         kernel_macho += buf
         try:
-            kernel_version = re.search(
-                b"(?P<version>Darwin Kernel Version .+?X86_64)\0", kernel_macho
-            ).group("version")
+            kernel_version = re.search(b"(?P<version>Darwin Kernel Version .+?X86_64)\0", kernel_macho).group("version").decode("ascii")
         except AttributeError:
             continue
         else:
