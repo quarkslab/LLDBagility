@@ -10,6 +10,8 @@ import traceback
 import kdpserver
 import lldb
 import lldbagilityutils
+import stubs.FDPSTUB
+import stubs.VMSNSTUB
 import stubvm
 
 vm = None
@@ -46,7 +48,7 @@ def fdp_attach(debugger, command, exe_ctx, result, internal_dict):
     parser.add_argument("vm_name")
     args = parser.parse_args(shlex.split(command))
 
-    _attach(debugger, exe_ctx, stubvm.FDPSTUB, args.vm_name)
+    _attach(debugger, exe_ctx, stubs.FDPSTUB.FDPSTUB, args.vm_name)
 
 
 def vmsn_attach(debugger, command, exe_ctx, result, internal_dict):
@@ -58,7 +60,7 @@ def vmsn_attach(debugger, command, exe_ctx, result, internal_dict):
     parser.add_argument("vm_name")
     args = parser.parse_args(shlex.split(command))
 
-    _attach(debugger, exe_ctx, stubvm.VMSNSTUB, args.vm_name)
+    _attach(debugger, exe_ctx, stubs.VMSNSTUB.VMSNSTUB, args.vm_name)
 
 
 def _attach(debugger, exe_ctx, vm_stub, vm_name):
@@ -194,9 +196,7 @@ def fdp_hbreakpoint(debugger, command, exe_ctx, result, internal_dict):
         choices={0, 1, 2, 3},
         help="Breakpoint slot to use (corresponding to registers ).",
     )
-    set_parser.add_argument(
-        "expression", help="Breakpoint address or expression to be evaluated as such."
-    )
+    set_parser.add_argument("expression", help="Breakpoint address or expression to be evaluated as such.")
 
     unset_parser = subparsers.add_parser("unset")
     unset_parser.add_argument(
@@ -396,12 +396,8 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldbagility.fdp_attach fdp-attach")
     debugger.HandleCommand("command script add -f lldbagility.fdp_save fdp-save")
     debugger.HandleCommand("command script add -f lldbagility.fdp_restore fdp-restore")
-    debugger.HandleCommand(
-        "command script add -f lldbagility.fdp_interrupt fdp-interrupt"
-    )
-    debugger.HandleCommand(
-        "command script add -f lldbagility.fdp_hbreakpoint fdp-hbreakpoint"
-    )
+    debugger.HandleCommand("command script add -f lldbagility.fdp_interrupt fdp-interrupt")
+    debugger.HandleCommand("command script add -f lldbagility.fdp_hbreakpoint fdp-hbreakpoint")
     debugger.HandleCommand("command script add -f lldbagility.fdp_test fdp-test")
 
     debugger.HandleCommand("command alias fa fdp-attach")

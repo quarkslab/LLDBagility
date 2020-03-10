@@ -9,28 +9,16 @@ RED = "\033[91m"
 CLEAR = "\033[0m"
 LLDBAGILITY = BOLD + RED + "LLDBagility" + CLEAR
 
-
-def p32(i):
-    return struct.pack("<I", i)
-
-
-def p64(i):
-    return struct.pack("<Q", i)
-
-
-def u32(s):
-    return struct.unpack("<I", s)[0]
-
-
-def u64(s):
-    return struct.unpack("<Q", s)[0]
+p32 = lambda i: struct.pack("<I", i)
+p64 = lambda i: struct.pack("<Q", i)
+u32 = lambda s: struct.unpack("<I", s)[0]
+u64 = lambda s: struct.unpack("<Q", s)[0]
+unhex = lambda s: s.decode("hex") or bytes.fromhex(s)
 
 
 def create_logger(name, filename):
     filehandler = logging.FileHandler(filename, mode="w")
-    filehandler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    )
+    filehandler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     logger = logging.getLogger(name)
     logger.propagate = False
     logger.addHandler(filehandler)
@@ -40,9 +28,7 @@ def create_logger(name, filename):
 
 def create_indented_logger(name, filename):
     filehandler = logging.FileHandler(filename, mode="w")
-    filehandler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(prefix)s%(message)s")
-    )
+    filehandler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(prefix)s%(message)s"))
     logger = logging.getLogger(name)
     logger.propagate = False
     logger.addHandler(filehandler)

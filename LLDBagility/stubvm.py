@@ -3,8 +3,6 @@ import re
 import threading
 
 import lldbagilityutils
-from PyFDP.FDP import FDP
-from VMSN import VMSN
 
 logger = lldbagilityutils.create_indented_logger(__name__, "/tmp/stubvm.log")
 
@@ -64,13 +62,7 @@ class STUBVM(object):
         # set a breakpoint on writes to the CR3 register (with high probability
         # only the kernel is doing it)
         cr3bp_id = self.stub.SetBreakpoint(
-            self.stub.CR_HBP,
-            0x0,
-            self.stub.WRITE_BP,
-            self.stub.VIRTUAL_ADDRESS,
-            0x3,
-            0x1,
-            self.stub.NO_CR3,
+            self.stub.CR_HBP, 0x0, self.stub.WRITE_BP, self.stub.VIRTUAL_ADDRESS, 0x3, 0x1, self.stub.NO_CR3
         )
         assert 0 <= cr3bp_id <= 254
         # resume the VM execution until reaching kernel code
@@ -108,9 +100,7 @@ class STUBVM(object):
         assert cpu_data_vaddr == cpu_this
 
         # https://github.com/apple/darwin-xnu/blob/xnu-4903.221.2/osfmk/i386/cpu_data.h#L150
-        cpu_active_thread = lldbagilityutils.u64(
-            self.read_virtual_memory(cpu_data_vaddr + 0x8, 0x8)
-        )
+        cpu_active_thread = lldbagilityutils.u64(self.read_virtual_memory(cpu_data_vaddr + 0x8, 0x8))
         logger.debug(">  cpu_active_thread: 0x{:016x}".format(cpu_active_thread))
         return cpu_active_thread
 
@@ -215,9 +205,7 @@ class STUBVM(object):
     @lldbagilityutils.indented(logger)
     @lldbagilityutils.synchronized
     def read_virtual_memory(self, vaddr, nbytes):
-        logger.debug(
-            "read_virtual_memory(vaddr=0x{:016x}, nbytes=0x{:x})".format(vaddr, nbytes)
-        )
+        logger.debug("read_virtual_memory(vaddr=0x{:016x}, nbytes=0x{:x})".format(vaddr, nbytes))
         data = self.stub.ReadVirtualMemory(vaddr, nbytes)
 
         if not data and not _in_kernel_space(self.read_register("rip")):
@@ -273,13 +261,7 @@ class STUBVM(object):
         id = 0x0
         length = 0x1
         self._soft_breakpoints[vaddr] = self.stub.SetBreakpoint(
-            self.stub.SOFT_HBP,
-            id,
-            self.stub.EXECUTE_BP,
-            self.stub.VIRTUAL_ADDRESS,
-            vaddr,
-            length,
-            self.stub.NO_CR3,
+            self.stub.SOFT_HBP, id, self.stub.EXECUTE_BP, self.stub.VIRTUAL_ADDRESS, vaddr, length, self.stub.NO_CR3
         )
         logger.debug(">  bp id: {}".format(self._soft_breakpoints[vaddr]))
         return self._soft_breakpoints[vaddr]
@@ -302,9 +284,7 @@ class STUBVM(object):
     @lldbagilityutils.synchronized
     def set_hard_breakpoint(self, trigger, nreg, vaddr):
         logger.debug(
-            "set_hard_exec_breakpoint(trigger='{}', nreg=0x{:016x}, vaddr=0x{:016x})".format(
-                trigger, nreg, vaddr
-            )
+            "set_hard_exec_breakpoint(trigger='{}', nreg=0x{:016x}, vaddr=0x{:016x})".format(trigger, nreg, vaddr)
         )
         assert self.is_state_halted()
         assert trigger in ("e", "w", "rw")
@@ -402,9 +382,8 @@ class STUBVM(object):
             return
 
         if self.is_breakpoint_hit():
-            logger.debug(
-                ">  state breakpoint hit: 0x{:016x}".format(self.read_register("rip"))
-            )
+            logger.debug(">  state breakpoint hit: 0x{:016x}".format(self.read_register("rip")))
+            # jump over the breakpoint
             self.stub.SingleStep()
 
         self.stub.Resume()
@@ -444,7 +423,7 @@ class STUBVM(object):
         return state
 
     @lldbagilityutils.synchronized
-    def is_state_changed(self):
+    def state_changed(self):
         return self.stub.GetStateChanged() or self._exception
 
     @lldbagilityutils.indented(logger)
@@ -457,9 +436,7 @@ class STUBVM(object):
     @lldbagilityutils.synchronized
     def is_breakpoint_hit(self):
         logger.debug("is_breakpoint_hit()")
-        return self.stub.GetState() & (
-            self.stub.STATE_BREAKPOINT_HIT | self.stub.STATE_HARD_BREAKPOINT_HIT
-        )
+        return self.stub.GetState() & (self.stub.STATE_BREAKPOINT_HIT | self.stub.STATE_HARD_BREAKPOINT_HIT)
 
     @lldbagilityutils.indented(logger)
     @lldbagilityutils.synchronized
@@ -521,9 +498,7 @@ def _find_kernel_load_vaddr(vm):
 
     @lldbagilityutils.indented(logger)
     def _search_kernel_load_vaddr(start_vaddr):
-        logger.debug(
-            "_search_kernel_load_vaddr(start_vaddr=0x{:016x})".format(start_vaddr)
-        )
+        logger.debug("_search_kernel_load_vaddr(start_vaddr=0x{:016x})".format(start_vaddr))
         # try to find the load address manually
         assert _in_kernel_space(start_vaddr)
         vaddr = start_vaddr & ~(I386_PGBYTES - 1)
@@ -534,9 +509,7 @@ def _find_kernel_load_vaddr(vm):
         else:
             raise AssertionError
 
-    kernel_load_vaddr = _get_debug_kernel_load_vaddr() or _search_kernel_load_vaddr(
-        vm.read_register("rip")
-    )
+    kernel_load_vaddr = _get_debug_kernel_load_vaddr() or _search_kernel_load_vaddr(vm.read_register("rip"))
     return kernel_load_vaddr
 
 
@@ -563,49 +536,3 @@ def _find_kernel_version(vm):
             return kernel_version
     else:
         raise AssertionError
-
-
-class FDPSTUB(FDP):
-    NO_CR3 = FDP.FDP_NO_CR3
-
-    SOFT_HBP = FDP.FDP_SOFTHBP
-    CR_HBP = FDP.FDP_CRHBP
-
-    VIRTUAL_ADDRESS = FDP.FDP_VIRTUAL_ADDRESS
-
-    EXECUTE_BP = FDP.FDP_EXECUTE_BP
-    WRITE_BP = FDP.FDP_WRITE_BP
-
-    STATE_PAUSED = FDP.FDP_STATE_PAUSED
-    STATE_BREAKPOINT_HIT = FDP.FDP_STATE_BREAKPOINT_HIT
-    STATE_HARD_BREAKPOINT_HIT = FDP.FDP_STATE_HARD_BREAKPOINT_HIT
-
-    CPU0 = FDP.FDP_CPU0
-
-    def __init__(self, name):
-        super(FDPSTUB, self).__init__(name)
-        assert self.GetCpuCount() == 1, (
-            "VMs with more than one CPU are not fully supported by FDP! "
-            "Decrease the number of processors in the VM settings"
-        )
-
-
-class VMSNSTUB(VMSN):
-    NO_CR3 = 0
-
-    SOFT_HBP = 2
-    CR_HBP = 0
-
-    VIRTUAL_ADDRESS = 0
-
-    EXECUTE_BP = 0
-    WRITE_BP = 0
-
-    STATE_PAUSED = 1
-    STATE_BREAKPOINT_HIT = 1
-    STATE_HARD_BREAKPOINT_HIT = 0
-
-    CPU0 = FDP.FDP_CPU0
-
-    def __init__(self, name):
-        super(VMSNSTUB, self).__init__(name)

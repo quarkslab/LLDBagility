@@ -1,10 +1,9 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
-from __future__ import print_function
-
+#!/usr/bin/env python
 import mmap
 import os
 import struct
+
+# WARNING !!! TODO !!! This is a crappy PoC !
 
 
 class PMEM(str):
@@ -75,7 +74,7 @@ class PMEM(str):
         if (PDPE_base == 0) or (PDPE_base > (self.mem_size - _4K)):
             return None
         tmp = self.ReadPhysical64(PDPE_base + (PDPE_index * 8))
-        if tmp & 0x80:  # This pas is a huge one (1G) !
+        if tmp & 0x80:  # This page is a huge one (1G) !
             print("TODO !!  HUGE !!!")
             return None
         PDE_base = tmp & 0x0000FFFFFFFFF000

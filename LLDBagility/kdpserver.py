@@ -6,13 +6,7 @@ import time
 import kdputils.replies
 import kdputils.requests
 import lldbagilityutils
-from kdputils.protocol import (
-    KDP_FEATURE_BP,
-    KDP_VERSION,
-    MAX_KDP_DATA_SIZE,
-    KDPError,
-    KDPRequest,
-)
+from kdputils.protocol import KDP_FEATURE_BP, KDP_VERSION, MAX_KDP_DATA_SIZE, KDPError, KDPRequest
 
 logger = lldbagilityutils.create_logger(__name__, "/tmp/kdpserver.log")
 
@@ -97,16 +91,12 @@ class KDPServer:
                 raise NotImplementedError
             else:
                 regs = {}
-                replypkt = kdputils.replies.kdp_readregs(
-                    KDPError.KDPERR_BADFLAVOR, regs
-                )
+                replypkt = kdputils.replies.kdp_readregs(KDPError.KDPERR_BADFLAVOR, regs)
 
         elif reqpkt["request"] == KDPRequest.KDP_WRITEREGS:
             assert self._cl_connected
             if reqpkt["flavor"] == x86_THREAD_STATE64:
-                regs = {
-                    k: v for k, v in reqpkt.items() if k in _STRUCT_X86_THREAD_STATE64
-                }
+                regs = {k: v for k, v in reqpkt.items() if k in _STRUCT_X86_THREAD_STATE64}
                 vm.write_registers(regs)
                 replypkt = kdputils.replies.kdp_writeregs(KDPError.KDPERR_NO_ERROR)
             elif reqpkt["flavor"] == x86_FLOAT_STATE64:
@@ -128,19 +118,13 @@ class KDPServer:
             assert self._cl_connected
             if reqpkt["nbytes"] > MAX_KDP_DATA_SIZE:
                 data = b""
-                replypkt = kdputils.replies.kdp_readmem64(
-                    KDPError.KDPERR_BAD_NBYTES, data
-                )
+                replypkt = kdputils.replies.kdp_readmem64(KDPError.KDPERR_BAD_NBYTES, data)
             else:
                 data = vm.read_virtual_memory(reqpkt["address"], reqpkt["nbytes"])
                 if len(data) != reqpkt["nbytes"]:
-                    replypkt = kdputils.replies.kdp_readmem64(
-                        KDPError.KDPERR_BAD_ACCESS, data
-                    )
+                    replypkt = kdputils.replies.kdp_readmem64(KDPError.KDPERR_BAD_ACCESS, data)
                 else:
-                    replypkt = kdputils.replies.kdp_readmem64(
-                        KDPError.KDPERR_NO_ERROR, data
-                    )
+                    replypkt = kdputils.replies.kdp_readmem64(KDPError.KDPERR_NO_ERROR, data)
 
         elif reqpkt["request"] == KDPRequest.KDP_WRITEMEM64:
             assert self._cl_connected
@@ -159,9 +143,7 @@ class KDPServer:
         elif reqpkt["request"] == KDPRequest.KDP_BREAKPOINT64_REMOVE:
             assert self._cl_connected
             vm.unset_soft_breakpoint(reqpkt["address"])
-            replypkt = kdputils.replies.kdp_breakpoint64_remove(
-                KDPError.KDPERR_NO_ERROR
-            )
+            replypkt = kdputils.replies.kdp_breakpoint64_remove(KDPError.KDPERR_NO_ERROR)
 
         elif reqpkt["request"] == KDPRequest.KDP_KERNELVERSION:
             assert self._cl_connected
@@ -195,26 +177,16 @@ class KDPServer:
                 if replypkt:
                     # send the response
                     cl_addr = (self._cl_host, self._cl_reply_port)
-                    kdputils.protocol.send(
-                        self.sv_sock, cl_addr, replypkt, reqpkt["seq"], reqpkt["key"]
-                    )
+                    kdputils.protocol.send(self.sv_sock, cl_addr, replypkt, reqpkt["seq"], reqpkt["key"])
 
-            if self._cl_connected and vm.is_state_changed():
+            if self._cl_connected and vm.state_changed():
                 _, exception = vm.state()
                 if exception:
                     (exception, code, subcode) = exception
                     reqpkt = kdputils.requests.kdp_exception(
-                        n_exc_info=0x1,
-                        cpu=0x0,
-                        exception=exception,
-                        code=code,
-                        subcode=subcode,
+                        n_exc_info=0x1, cpu=0x0, exception=exception, code=code, subcode=subcode
                     )
                     cl_addr = (self._cl_host, self._cl_exception_port)
                     kdputils.protocol.send(
-                        self.sv_sock,
-                        cl_addr,
-                        reqpkt,
-                        next(self._cl_exception_seq),
-                        self._cl_session_key,
+                        self.sv_sock, cl_addr, reqpkt, next(self._cl_exception_seq), self._cl_session_key
                     )
