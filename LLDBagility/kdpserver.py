@@ -148,7 +148,7 @@ class KDPServer:
         elif reqpkt["request"] == KDPRequest.KDP_KERNELVERSION:
             assert self._cl_connected
             kernel_version = vm.get_kernel_version()
-            replypkt = kdputils.replies.kdp_kernelversion(kernel_version)
+            replypkt = kdputils.replies.kdp_kernelversion(kernel_version.encode("ascii"))
 
         elif reqpkt["request"] == KDPRequest.KDP_EXCEPTION:
             assert self._cl_connected
