@@ -137,8 +137,10 @@ class KDPServer:
 
         elif reqpkt["request"] == KDPRequest.KDP_BREAKPOINT64_SET:
             assert self._cl_connected
-            vm.set_soft_exec_breakpoint(reqpkt["address"])
-            replypkt = kdputils.replies.kdp_breakpoint64_set(KDPError.KDPERR_NO_ERROR)
+            bpid = vm.set_soft_exec_breakpoint(reqpkt["address"])
+            replypkt = kdputils.replies.kdp_breakpoint64_set(
+                KDPError.KDPERR_NO_ERROR if bpid is not None else KDPError.KDPERR_MAX_BREAKPOINTS
+            )
 
         elif reqpkt["request"] == KDPRequest.KDP_BREAKPOINT64_REMOVE:
             assert self._cl_connected

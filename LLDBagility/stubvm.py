@@ -258,13 +258,14 @@ class STUBVM(object):
     def set_soft_exec_breakpoint(self, vaddr):
         logger.debug("set_soft_exec_breakpoint(vaddr=0x{:016x})".format(vaddr))
         assert self.is_state_halted()
-        id = 0x0
         length = 0x1
-        self._soft_breakpoints[vaddr] = self.stub.SetBreakpoint(
-            self.stub.SOFT_HBP, id, self.stub.EXECUTE_BP, self.stub.VIRTUAL_ADDRESS, vaddr, length, self.stub.NO_CR3
+        bpid = self.stub.SetBreakpoint(
+            self.stub.SOFT_HBP, -1, self.stub.EXECUTE_BP, self.stub.VIRTUAL_ADDRESS, vaddr, length, self.stub.NO_CR3
         )
-        logger.debug(">  bp id: {}".format(self._soft_breakpoints[vaddr]))
-        return self._soft_breakpoints[vaddr]
+        logger.debug(">  bp id: {}".format(bpid))
+        if bpid is not None:
+            self._soft_breakpoints[vaddr] = bpid
+        return bpid
 
     @lldbagilityutils.indented(logger)
     @lldbagilityutils.synchronized
