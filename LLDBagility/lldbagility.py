@@ -347,6 +347,8 @@ def fdp_test(debugger, command, exe_ctx, result, internal_dict):
         vm.unset_hard_breakpoint(0x3)
         assert vm.read_register("dr7") == 0b00110011001100010000000000000000
 
+        vm.write_register("dr7", 0x0)
+
     def _t6():
         print("* Soft/hard exec breakpoint")
         vm.halt()
