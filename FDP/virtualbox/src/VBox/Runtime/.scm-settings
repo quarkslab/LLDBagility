@@ -1,0 +1,69 @@
+# $Id: .scm-settings $
+## @file
+# Source code massager settings for Runtime.
+#
+
+#
+# Copyright (C) 2010-2020 Oracle Corporation
+#
+# This file is part of VirtualBox Open Source Edition (OSE), as
+# available from http://www.virtualbox.org. This file is free software;
+# you can redistribute it and/or modify it under the terms of the GNU
+# General Public License (GPL) as published by the Free Software
+# Foundation, in version 2 as it comes in the "COPYING" file of the
+# VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+# hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+#
+# The contents of this file may alternatively be used under the terms
+# of the Common Development and Distribution License Version 1.0
+# (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+# VirtualBox OSE distribution, in which case the provisions of the
+# CDDL are applicable instead of those of the GPL.
+#
+# You may elect to license modified versions of this file under the
+# terms and conditions of either the GPL or the CDDL or both.
+#
+
+--license-ose-dual
+
+
+/common/asn1/oiddb.cfg: --treat-as Makefile
+
+# Skip test certificates.
+--filter-out-files /testcase/tstRTCrX509*.pem
+--filter-out-files /testcase/tstRTCrX509*.der
+
+# Skip test binaries and other output/input files.
+--filter-out-files /testcase/*.bin
+--filter-out-files /testcase/*.o
+--filter-out-files /testcase/tstRTLdrMachORelocs-1.o
+--filter-out-files /testcase/tstRTLdrMachORelocs-1.S
+--filter-out-files /testcase/tstRTLdrMachORelocs-1.disas
+
+# Small C and ASM header, no copyright or license text for now.
+/r3/win/vcc100-kernel32-fakes.h: --external-copyright --no-update-license
+
+# external code
+/r0drv/os2/os2imports.imp                      : --external-copyright --treat-as .def
+
+/r3/win/VBoxRT-msvcp100-win32.def              : --external-copyright
+/r3/win/VBoxRT-msvcr100-win32.def              : --external-copyright
+
+/common/math/x86/fenv-x86.c                    : --external-copyright --no-convert-tabs
+
+/common/math/gcc/*                             : --external-copyright --no-convert-tabs --dont-set-svn-keywords
+/common/math/gcc/udivmoddi4.c                  : --no-external-copyright --convert-tabs --set-svn-keywords
+
+# No header guard for these:
+/testcase/tstRTBigNum-uint128-div-test-data.h  : --no-fix-header-guards
+/testcase/tstRTBigNum-div-test-data.h          : --no-fix-header-guards
+/common/time/timesupref.h                      : --no-fix-header-guards
+/common/asn1/*-template.h                      : --no-fix-header-guards
+/common/asn1/*-template2.h                     : --no-fix-header-guards
+/common/crypto/*-template.h                    : --no-fix-header-guards
+/common/math/gcc/quad.h                        : --no-fix-header-guards
+/common/misc/sanity.h                          : --no-fix-header-guards
+/r3/win/vcc100-kernel32-fakes.h                : --no-fix-header-guards
+/*.h: --guard-relative-to-dir . --guard-prefix IPRT_INCLUDED_SRC_
+/include/internal/*.h: --guard-relative-to-dir include/internal --guard-prefix IPRT_INCLUDED_INTERNAL_
+

@@ -130,6 +130,8 @@ extern "C"
                                                   uint32_t PatternSize, uint64_t StartOffset);
     FDP_EXPORTED bool     FDP_ReadRegister(FDP_SHM* pShm, uint32_t CpuId, FDP_Register RegisterId,
                                            uint64_t* pRegisterValue);
+                 bool     FDP_ReadRegisterInternal(FDP_SHM* pFDP, uint32_t CpuId, FDP_Register RegisterId,
+                                                   uint64_t* pRegisterValue);
     FDP_EXPORTED bool FDP_WriteRegister(FDP_SHM* pShm, uint32_t CpuId, FDP_Register RegisterId, uint64_t RegisterValue);
     FDP_EXPORTED bool FDP_ReadMsr(FDP_SHM* pShm, uint32_t CpuId, uint64_t MsrId, uint64_t* pMsrValue);
     FDP_EXPORTED bool FDP_WriteMsr(FDP_SHM* pShm, uint32_t CpuId, uint64_t MsrId, uint64_t MsrValue);
@@ -154,11 +156,11 @@ extern "C"
     FDP_EXPORTED void FDP_SetStateChanged(FDP_SHM* pShm);
     FDP_EXPORTED bool FDP_InjectInterrupt(FDP_SHM* pShm, uint32_t CpuId, uint32_t uInterruptionCode,
                                           uint32_t uErrorCode, uint64_t Cr2Value);
+    FDP_EXPORTED bool FDP_IsAArch64(FDP_SHM* pShm);
     FDP_EXPORTED bool FDP_SetFDPServer(FDP_SHM* pFDP, FDP_SERVER_INTERFACE_T* pFDPServer);
     FDP_EXPORTED bool FDP_ServerLoop(FDP_SHM* pFDP);
 
     uint8_t FDP_Test(FDP_SHM* pShm);
-    bool    FDP_UnitTest();
 
 #ifdef __cplusplus
 }

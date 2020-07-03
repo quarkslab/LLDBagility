@@ -1,6 +1,7 @@
-project(FDP)
-
 cmake_minimum_required(VERSION 3.14)
+cmake_policy(SET CMP0048 NEW)
+
+project(FDP VERSION 20.1)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

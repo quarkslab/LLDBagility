@@ -498,6 +498,26 @@ bool FDP_SearchVirtualMemory(FDP_SHM* pFDP, uint32_t CpuId, const void* pPattern
     return bReturnCode;
 }
 
+bool FDP_ReadRegisterInternal(FDP_SHM* pFDP, uint32_t CpuId, FDP_Register RegisterId, uint64_t* pRegisterValue)
+{
+    if (pFDP == NULL)
+    {
+        return false;
+    }
+    bool                      bIsSuccess = false;
+    FDP_READ_REGISTER_PKT_REQ TempPkt;
+    TempPkt.Type = FDPCMD_READ_REGISTER;
+    TempPkt.CpuId = CpuId;
+    TempPkt.RegisterId = RegisterId;
+    LockSHM(pFDP->pSharedFDPSHM);
+    {
+        WriteFDPData(&pFDP->pSharedFDPSHM->ClientToServer, (uint8_t*)&TempPkt, sizeof(FDP_READ_REGISTER_PKT_REQ));
+        ReadFDPDataWithStatus(&pFDP->pSharedFDPSHM->ServerToClient, (uint8_t*)pRegisterValue, &bIsSuccess);
+    }
+    UnlockSHM(pFDP->pSharedFDPSHM);
+    return bIsSuccess;
+}
+
 FDP_EXPORTED
 bool FDP_ReadRegister(FDP_SHM* pFDP, uint32_t CpuId, FDP_Register RegisterId, uint64_t* pRegisterValue)
 {
@@ -508,6 +528,7 @@ bool FDP_ReadRegister(FDP_SHM* pFDP, uint32_t CpuId, FDP_Register RegisterId, ui
     //Fast way...
     switch (RegisterId)
     {
+    // x86-64
     case FDP_RIP_REGISTER:
         *pRegisterValue = pFDP->pCpuShm->rip;
         return true;
@@ -571,21 +592,108 @@ bool FDP_ReadRegister(FDP_SHM* pFDP, uint32_t CpuId, FDP_Register RegisterId, ui
     case FDP_CR4_REGISTER:
         *pRegisterValue = pFDP->pCpuShm->cr4;
         return true;
+
+    // AArch64
+    case FDP_X0_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x0;
+        return true;
+    case FDP_X1_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x1;
+        return true;
+    case FDP_X2_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x2;
+        return true;
+    case FDP_X3_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x3;
+        return true;
+    case FDP_X4_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x4;
+        return true;
+    case FDP_X5_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x5;
+        return true;
+    case FDP_X6_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x6;
+        return true;
+    case FDP_X7_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x7;
+        return true;
+    case FDP_X8_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x8;
+        return true;
+    case FDP_X9_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x9;
+        return true;
+    case FDP_X10_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x10;
+        return true;
+    case FDP_X11_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x11;
+        return true;
+    case FDP_X12_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x12;
+        return true;
+    case FDP_X13_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x13;
+        return true;
+    case FDP_X14_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x14;
+        return true;
+    case FDP_X15_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x15;
+        return true;
+    case FDP_X16_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x16;
+        return true;
+    case FDP_X17_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x17;
+        return true;
+    case FDP_X18_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x18;
+        return true;
+    case FDP_X19_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x19;
+        return true;
+    case FDP_X20_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x20;
+        return true;
+    case FDP_X21_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x21;
+        return true;
+    case FDP_X22_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x22;
+        return true;
+    case FDP_X23_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x23;
+        return true;
+    case FDP_X24_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x24;
+        return true;
+    case FDP_X25_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x25;
+        return true;
+    case FDP_X26_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x26;
+        return true;
+    case FDP_X27_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x27;
+        return true;
+    case FDP_X28_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x28;
+        return true;
+    case FDP_X29_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x29;
+        return true;
+    case FDP_LR_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x30;
+        return true;
+    case FDP_SP_REGISTER:
+        *pRegisterValue = pFDP->pCpuShm->x31;
+        return true;
     default:
         break;
     }
-    //Old version => low performance
-    FDP_READ_REGISTER_PKT_REQ TempPkt;
-    TempPkt.Type = FDPCMD_READ_REGISTER;
-    TempPkt.CpuId = CpuId;
-    TempPkt.RegisterId = RegisterId;
-    LockSHM(pFDP->pSharedFDPSHM);
-    {
-        WriteFDPData(&pFDP->pSharedFDPSHM->ClientToServer, (uint8_t*)&TempPkt, sizeof(FDP_READ_REGISTER_PKT_REQ));
-        ReadFDPData(&pFDP->pSharedFDPSHM->ServerToClient, (uint8_t*)pRegisterValue);  //TODO: return success/fail !
-    }
-    UnlockSHM(pFDP->pSharedFDPSHM);
-    return true;
+    return FDP_ReadRegisterInternal(pFDP, CpuId, RegisterId, pRegisterValue);
 }
 
 FDP_EXPORTED
@@ -726,10 +834,10 @@ bool FDP_VirtualToPhysical(FDP_SHM* pFDP, uint32_t CpuId, uint64_t VirtualAddres
     LockSHM(pFDP->pSharedFDPSHM);
     {
         WriteFDPData(&pFDP->pSharedFDPSHM->ClientToServer, (uint8_t*)&TempPkt, sizeof(FDP_VIRTUAL_PHYSICAL_PKT_REQ));
-        ReadFDPData(&pFDP->pSharedFDPSHM->ServerToClient, (uint8_t*)PhysicalAddress);  //TODO: return success/fail !
+        ReadFDPData(&pFDP->pSharedFDPSHM->ServerToClient, (uint8_t*)PhysicalAddress);
     }
     UnlockSHM(pFDP->pSharedFDPSHM);
-    return true;
+    return *PhysicalAddress != (uint64_t)-1;
 }
 
 FDP_EXPORTED
@@ -1017,6 +1125,18 @@ bool FDP_InjectInterrupt(FDP_SHM* pFDP, uint32_t CpuId, uint32_t uInterruptionCo
     return bReturnValue;
 }
 
+FDP_EXPORTED
+bool FDP_IsAArch64(FDP_SHM* pFDP)
+{
+    if (pFDP == NULL)
+    {
+        return false;
+    }
+
+    uint64_t RegisterValue;
+    return FDP_ReadRegisterInternal(pFDP, 0, FDP_X0_REGISTER, &RegisterValue);
+}
+
 //Server Part
 FDP_EXPORTED
 bool FDP_ServerLoop(FDP_SHM* pFDP)
@@ -1143,8 +1263,8 @@ bool FDP_ServerLoop(FDP_SHM* pFDP)
         {
             uint64_t                   RegisterValue = 0;
             FDP_READ_REGISTER_PKT_REQ* TempPkt = (FDP_READ_REGISTER_PKT_REQ*)pFDP->InputBuffer;
-            pFDP->pFdpServer->pfnReadRegister(pFDP->pFdpServer->pUserHandle, TempPkt->CpuId, TempPkt->RegisterId,
-                                              &RegisterValue);
+            bStatus = pFDP->pFdpServer->pfnReadRegister(pFDP->pFdpServer->pUserHandle, TempPkt->CpuId,
+                                                        TempPkt->RegisterId, &RegisterValue);
             ((uint64_t*)pFDP->OutputBuffer)[0] = RegisterValue;
             u32OutputBuffersize = sizeof(RegisterValue);
             break;

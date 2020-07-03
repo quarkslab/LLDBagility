@@ -37,6 +37,9 @@ bool FDP_DummyGetCpuCount(void* pUserHandle, uint32_t* pCpuCount)
 void* FDP_UnitTestClient(void* lpParameter)
 {
     FDP_SHM* pFDPClient = (FDP_SHM*)lpParameter;
+
+    const bool bAArch64 = FDP_IsAArch64(pFDPClient);
+
     //Waiting for FDPServer star
     while (pFDPClient->pFdpServer->bIsRunning == false)
     {
@@ -45,7 +48,7 @@ void* FDP_UnitTestClient(void* lpParameter)
 
     while (bIsRunning)
     {
-        FDP_WriteRegister(pFDPClient, 0, FDP_CS_REGISTER, 0xCAFECAFECAFECAFE);
+        FDP_WriteRegister(pFDPClient, 0, bAArch64 ? FDP_PC_REGISTER : FDP_CS_REGISTER, 0xCAFECAFECAFECAFE);
     }
     return NULL;
 }
@@ -53,13 +56,16 @@ void* FDP_UnitTestClient(void* lpParameter)
 void* counter_core(void* lpParameter)
 {
     FDP_SHM* pFDPClient = (FDP_SHM*)lpParameter;
+
+    const bool bAArch64 = FDP_IsAArch64(pFDPClient);
+
     uint64_t count = 0;
     for (int i = 0; i < 10; i++)
     {
         printf("...\n");
         sleep(1);
         printf("Read...\n");
-        FDP_ReadRegister(pFDPClient, 0, FDP_CS_REGISTER, &count);
+        FDP_ReadRegister(pFDPClient, 0, bAArch64 ? FDP_PC_REGISTER : FDP_CS_REGISTER, &count);
         printf("%llu/sec\n", count);
     }
     bIsRunning = false;

@@ -1,0 +1,424 @@
+/* $Id: VMMAll.cpp $ */
+/** @file
+ * VMM All Contexts.
+ */
+
+/*
+ * Copyright (C) 2006-2020 Oracle Corporation
+ *
+ * This file is part of VirtualBox Open Source Edition (OSE), as
+ * available from http://www.virtualbox.org. This file is free software;
+ * you can redistribute it and/or modify it under the terms of the GNU
+ * General Public License (GPL) as published by the Free Software
+ * Foundation, in version 2 as it comes in the "COPYING" file of the
+ * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+ * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ */
+
+
+/*********************************************************************************************************************************
+*   Header Files                                                                                                                 *
+*********************************************************************************************************************************/
+#define LOG_GROUP LOG_GROUP_VMM
+#include <VBox/vmm/vmm.h>
+#include "VMMInternal.h"
+#include <VBox/vmm/vmcc.h>
+#ifdef IN_RING0
+# include <VBox/vmm/gvm.h>
+#endif
+#include <VBox/vmm/hm.h>
+#include <VBox/vmm/vmcpuset.h>
+#include <VBox/param.h>
+#include <iprt/thread.h>
+#include <iprt/mp.h>
+
+
+/*********************************************************************************************************************************
+*   Global Variables                                                                                                             *
+*********************************************************************************************************************************/
+/** User counter for the vmmInitFormatTypes function (pro forma). */
+static volatile uint32_t g_cFormatTypeUsers = 0;
+
+
+/**
+ * Helper that formats a decimal number in the range 0..9999.
+ *
+ * @returns The length of the formatted number.
+ * @param   pszBuf              Output buffer with sufficient space.
+ * @param   uNumber             The number to format.
+ */
+static unsigned vmmFormatTypeShortNumber(char *pszBuf, uint32_t uNumber)
+{
+    unsigned  off = 0;
+    if (uNumber >= 10)
+    {
+        if (uNumber >= 100)
+        {
+            if (uNumber >= 1000)
+                pszBuf[off++] = ((uNumber / 1000) % 10) + '0';
+            pszBuf[off++] = ((uNumber / 100) % 10) + '0';
+        }
+        pszBuf[off++] = ((uNumber / 10) % 10) + '0';
+    }
+    pszBuf[off++] = (uNumber % 10) + '0';
+    pszBuf[off] = '\0';
+    return off;
+}
+
+
+/**
+ * @callback_method_impl{FNRTSTRFORMATTYPE, vmsetcpu}
+ */
+static DECLCALLBACK(size_t) vmmFormatTypeVmCpuSet(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
+                                                  const char *pszType, void const *pvValue,
+                                                  int cchWidth, int cchPrecision, unsigned fFlags,
+                                                  void *pvUser)
+{
+    NOREF(pszType); NOREF(cchWidth); NOREF(cchPrecision); NOREF(fFlags);
+
+    PCVMCPUSET  pSet   = (PCVMCPUSET)pvValue;
+    uint32_t    cCpus  = 0;
+    uint32_t    iCpu   = RT_ELEMENTS(pSet->au32Bitmap) * 32;
+    while (iCpu--)
+        if (VMCPUSET_IS_PRESENT(pSet, iCpu))
+            cCpus++;
+
+    char szTmp[32];
+    AssertCompile(RT_ELEMENTS(pSet->au32Bitmap) * 32 < 999);
+    if (cCpus == 1)
+    {
+        iCpu = RT_ELEMENTS(pSet->au32Bitmap) * 32;
+        while (iCpu--)
+            if (VMCPUSET_IS_PRESENT(pSet, iCpu))
+            {
+                szTmp[0] = 'c';
+                szTmp[1] = 'p';
+                szTmp[2] = 'u';
+                return pfnOutput(pvArgOutput, szTmp, 3 + vmmFormatTypeShortNumber(&szTmp[3], iCpu));
+            }
+        cCpus = 0;
+    }
+    if (cCpus == 0)
+        return pfnOutput(pvArgOutput, RT_STR_TUPLE("<empty>"));
+    if (cCpus == RT_ELEMENTS(pSet->au32Bitmap) * 32)
+        return pfnOutput(pvArgOutput, RT_STR_TUPLE("<full>"));
+
+    /*
+     * Print cpus that are present: {1,2,7,9 ... }
+     */
+    size_t cchRet = pfnOutput(pvArgOutput, "{", 1);
+
+    cCpus = 0;
+    iCpu  = 0;
+    while (iCpu < RT_ELEMENTS(pSet->au32Bitmap) * 32)
+    {
+        if (VMCPUSET_IS_PRESENT(pSet, iCpu))
+        {
+            /* Output the first cpu number. */
+            int off = 0;
+            if (cCpus != 0)
+                szTmp[off++] = ',';
+            cCpus++;
+            off += vmmFormatTypeShortNumber(&szTmp[off], iCpu);
+
+            /* Check for sequence. */
+            uint32_t const iStart = ++iCpu;
+            while (   iCpu < RT_ELEMENTS(pSet->au32Bitmap) * 32
+                   && VMCPUSET_IS_PRESENT(pSet, iCpu))
+            {
+                iCpu++;
+                cCpus++;
+            }
+            if (iCpu != iStart)
+            {
+                szTmp[off++] = '-';
+                off += vmmFormatTypeShortNumber(&szTmp[off], iCpu);
+            }
+
+            /* Terminate and output. */
+            szTmp[off] = '\0';
+            cchRet += pfnOutput(pvArgOutput, szTmp, off);
+        }
+        iCpu++;
+    }
+
+    cchRet += pfnOutput(pvArgOutput, "}", 1);
+    NOREF(pvUser);
+    return cchRet;
+}
+
+
+/**
+ * Registers the VMM wide format types.
+ *
+ * Called by VMMR3Init, VMMR0Init and VMMRCInit.
+ */
+int vmmInitFormatTypes(void)
+{
+    int rc = VINF_SUCCESS;
+    if (ASMAtomicIncU32(&g_cFormatTypeUsers) == 1)
+        rc = RTStrFormatTypeRegister("vmcpuset", vmmFormatTypeVmCpuSet, NULL);
+    return rc;
+}
+
+
+/**
+ * Counterpart to vmmInitFormatTypes, called by VMMR3Term and VMMR0Term.
+ */
+void vmmTermFormatTypes(void)
+{
+    if (ASMAtomicDecU32(&g_cFormatTypeUsers) == 0)
+        RTStrFormatTypeDeregister("vmcpuset");
+}
+
+
+/**
+ * Gets the ID of the virtual CPU associated with the calling thread.
+ *
+ * @returns The CPU ID. NIL_VMCPUID if the thread isn't an EMT.
+ *
+ * @param   pVM         The cross context VM structure.
+ * @internal
+ */
+VMMDECL(VMCPUID) VMMGetCpuId(PVMCC pVM)
+{
+#if defined(IN_RING3)
+    return VMR3GetVMCPUId(pVM);
+
+#elif defined(IN_RING0)
+    if (pVM->cCpus == 1)
+        return 0;
+    VMCPUID const cCpus = pVM->cCpus;
+
+    /* Search first by host cpu id (most common case)
+     * and then by native thread id (page fusion case).
+     */
+    if (!RTThreadPreemptIsEnabled(NIL_RTTHREAD))
+    {
+        /** @todo r=ramshankar: This doesn't buy us anything in terms of performance
+         *        leaving it here for hysterical raisins and as a reference if we
+         *        implemented a hashing approach in the future. */
+        RTCPUID idHostCpu = RTMpCpuId();
+
+        /** @todo optimize for large number of VCPUs when that becomes more common. */
+        for (VMCPUID idCpu = 0; idCpu < cCpus; idCpu++)
+        {
+            PVMCPUCC pVCpu = VMCC_GET_CPU(pVM, idCpu);
+            if (pVCpu->idHostCpu == idHostCpu)
+                return pVCpu->idCpu;
+        }
+    }
+
+    /* RTThreadGetNativeSelf had better be cheap. */
+    RTNATIVETHREAD hThread = RTThreadNativeSelf();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common. */
+    for (VMCPUID idCpu = 0; idCpu < cCpus; idCpu++)
+    {
+        PVMCPUCC pVCpu = VMCC_GET_CPU(pVM, idCpu);
+        if (pVCpu->hNativeThreadR0 == hThread)
+            return pVCpu->idCpu;
+    }
+    return NIL_VMCPUID;
+
+#else /* RC: Always EMT(0) */
+    NOREF(pVM);
+    return 0;
+#endif
+}
+
+
+/**
+ * Returns the VMCPU of the calling EMT.
+ *
+ * @returns The VMCPU pointer. NULL if not an EMT.
+ *
+ * @param   pVM         The cross context VM structure.
+ * @internal
+ */
+VMMDECL(PVMCPUCC) VMMGetCpu(PVMCC pVM)
+{
+#ifdef IN_RING3
+    VMCPUID idCpu = VMR3GetVMCPUId(pVM);
+    if (idCpu == NIL_VMCPUID)
+        return NULL;
+    Assert(idCpu < pVM->cCpus);
+    return VMCC_GET_CPU(pVM, idCpu);
+
+#elif defined(IN_RING0)
+    VMCPUID const cCpus = pVM->cCpus;
+    if (pVM->cCpus == 1)
+        return VMCC_GET_CPU_0(pVM);
+
+    /*
+     * Search first by host cpu id (most common case)
+     * and then by native thread id (page fusion case).
+     */
+    if (!RTThreadPreemptIsEnabled(NIL_RTTHREAD))
+    {
+        /** @todo r=ramshankar: This doesn't buy us anything in terms of performance
+         *        leaving it here for hysterical raisins and as a reference if we
+         *        implemented a hashing approach in the future. */
+        RTCPUID idHostCpu = RTMpCpuId();
+
+        /** @todo optimize for large number of VCPUs when that becomes more common. */
+        for (VMCPUID idCpu = 0; idCpu < cCpus; idCpu++)
+        {
+            PVMCPUCC pVCpu = VMCC_GET_CPU(pVM, idCpu);
+            if (pVCpu->idHostCpu == idHostCpu)
+                return pVCpu;
+        }
+    }
+
+    /* RTThreadGetNativeSelf had better be cheap. */
+    RTNATIVETHREAD hThread = RTThreadNativeSelf();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common.
+     * Use a map like GIP does that's indexed by the host CPU index.  */
+    for (VMCPUID idCpu = 0; idCpu < cCpus; idCpu++)
+    {
+        PVMCPUCC pVCpu = VMCC_GET_CPU(pVM, idCpu);
+        if (pVCpu->hNativeThreadR0 == hThread)
+            return pVCpu;
+    }
+    return NULL;
+
+#else /* RC: Always EMT(0) */
+    RT_NOREF(pVM);
+    return &g_VCpu0;
+#endif /* IN_RING0 */
+}
+
+
+/**
+ * Returns the VMCPU of the first EMT thread.
+ *
+ * @returns The VMCPU pointer.
+ * @param   pVM         The cross context VM structure.
+ * @internal
+ */
+VMMDECL(PVMCPUCC) VMMGetCpu0(PVMCC pVM)
+{
+    Assert(pVM->cCpus == 1);
+    return VMCC_GET_CPU_0(pVM);
+}
+
+
+/**
+ * Returns the VMCPU of the specified virtual CPU.
+ *
+ * @returns The VMCPU pointer. NULL if idCpu is invalid.
+ *
+ * @param   pVM         The cross context VM structure.
+ * @param   idCpu       The ID of the virtual CPU.
+ * @internal
+ */
+VMMDECL(PVMCPUCC) VMMGetCpuById(PVMCC pVM, RTCPUID idCpu)
+{
+    AssertReturn(idCpu < pVM->cCpus, NULL);
+    return VMCC_GET_CPU(pVM, idCpu);
+}
+
+
+/**
+ * Gets the VBOX_SVN_REV.
+ *
+ * This is just to avoid having to compile a bunch of big files
+ * and requires less Makefile mess.
+ *
+ * @returns VBOX_SVN_REV.
+ */
+VMM_INT_DECL(uint32_t) VMMGetSvnRev(void)
+{
+    return VBOX_SVN_REV;
+}
+
+
+/**
+ * Checks whether we're in a ring-3 call or not.
+ *
+ * @returns true / false.
+ * @param   pVCpu   The cross context virtual CPU structure of the calling EMT.
+ * @thread  EMT
+ */
+VMM_INT_DECL(bool) VMMIsInRing3Call(PVMCPU pVCpu)
+{
+#ifdef RT_ARCH_X86
+    return pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call;
+#else
+    return pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call;
+#endif
+}
+
+
+/**
+ * Returns the build type for matching components.
+ *
+ * @returns Build type value.
+ */
+uint32_t vmmGetBuildType(void)
+{
+    uint32_t uRet = 0xbeef0000;
+#ifdef DEBUG
+    uRet |= RT_BIT_32(0);
+#endif
+#ifdef VBOX_WITH_STATISTICS
+    uRet |= RT_BIT_32(1);
+#endif
+    return uRet;
+}
+
+/*FDPCODE*/
+VMM_INT_DECL(bool)
+VMMMatchBreakpointId(PVM pVM, int BreakpointId, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess)
+{
+    if (BreakpointId >= 0 || BreakpointId <= FDPVBOX_MAX_BREAKPOINT_ID)
+    {
+        BreakpointEntrie_t* TempBreakpointEntrie = &pVM->bp.l[BreakpointId];
+        if (TempBreakpointEntrie->breakpointActivated && TempBreakpointEntrie->breakpointType == BreakpointType &&
+            (TempBreakpointEntrie->breakpointAccessType & BreakpointAccess))
+        {
+            for (uint64_t j = 0; j < TempBreakpointEntrie->breakpointGCPhysAreaCount; j++)
+            {
+                if (GCPhys >= TempBreakpointEntrie->breakpointGCPhysAreaTable[j].Start &&
+                    GCPhys < TempBreakpointEntrie->breakpointGCPhysAreaTable[j].End)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+VMM_INT_DECL(int)
+VMMGetBreakpointId(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType, int BreakpointAccess)
+{
+    for (int i = 0; i <= FDPVBOX_MAX_BREAKPOINT_ID; i++)
+    {
+        if (VMMMatchBreakpointId(pVM, i, GCPhys, BreakpointType, BreakpointAccess))
+            return i;
+    }
+    return -1;
+}
+
+VMM_INT_DECL(int)
+VMMGetBreakpointIdFromPage(PVM pVM, RTGCPHYS GCPhys, uint8_t BreakpointType)
+{
+    GCPhys = GCPhys & ~(_4K - 1);
+    for (int i = 0; i <= FDPVBOX_MAX_BREAKPOINT_ID; i++)
+    {
+        if (pVM->bp.l[i].breakpointActivated && pVM->bp.l[i].breakpointType == BreakpointType)
+        {
+            for (uint64_t j = 0; j < pVM->bp.l[i].breakpointGCPhysAreaCount; j++)
+            {
+                if ((GCPhys & ~(_4K - 1)) == (pVM->bp.l[i].breakpointGCPhysAreaTable[j].Start & ~(_4K - 1)))
+                {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+/*ENDFDPCODE*/

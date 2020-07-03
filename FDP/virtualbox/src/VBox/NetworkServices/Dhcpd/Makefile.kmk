@@ -1,0 +1,88 @@
+# $Id: Makefile.kmk $
+## @file
+# Sub-makefile for the DHCP server.
+#
+
+#
+# Copyright (C) 2006-2020 Oracle Corporation
+#
+# This file is part of VirtualBox Open Source Edition (OSE), as
+# available from http://www.virtualbox.org. This file is free software;
+# you can redistribute it and/or modify it under the terms of the GNU
+# General Public License (GPL) as published by the Free Software
+# Foundation, in version 2 as it comes in the "COPYING" file of the
+# VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+# hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+#
+
+SUB_DEPTH := ../../../..
+include $(KBUILD_PATH)/subheader.kmk
+
+ifndef LWIP_SOURCES
+ include $(PATH_SUB_CURRENT)/../../Devices/Network/lwip-new/Config.kmk
+endif
+
+#
+# Hardended stub executable.
+#
+ifdef VBOX_WITH_HARDENING
+PROGRAMS += VBoxNetDHCPHardened
+VBoxNetDHCPHardened_TEMPLATE = VBOXR3HARDENEDEXE
+VBoxNetDHCPHardened_NAME     = VBoxNetDHCP
+VBoxNetDHCPHardened_SOURCES  = VBoxNetDhcpdHardened.cpp
+VBoxNetDHCPHardened_LDFLAGS.win = /SUBSYSTEM:windows
+$(call VBOX_SET_VER_INFO_DLL,VBoxNetDHCPHardened,VirtualBox DHCP Server,$(VBOX_WINDOWS_ICON_FILE)) # Version info / description.
+endif
+
+
+#
+# The DHCP server module (dll if hardended)
+#
+ifdef VBOX_WITH_HARDENING
+DLLS     += VBoxNetDHCP
+VBoxNetDHCP_TEMPLATE := VBoxR3Dll
+else
+PROGRAMS += VBoxNetDHCP
+VBoxNetDHCP_TEMPLATE := VBOXR3EXE
+endif
+
+# (current dir is for for lwipopts.h)
+VBoxNetDHCP_INCS += . $(addprefix ../../Devices/Network/lwip-new/,$(LWIP_INCS))
+
+VBoxNetDHCP_DEFS      = KBUILD_TYPE=\"$(KBUILD_TYPE)\"
+#VBoxNetDHCP_DEFS     = IPv6
+#VBoxNetDHCP_DEFS.linux = WITH_VALGRIND
+ifneq ($(KBUILD_TARGET),win)
+VBoxNetDHCP_DEFS     += VBOX_WITH_XPCOM
+VBoxNetDHCP_INCS     += $(VBOX_XPCOM_INCS)
+ ifneq ($(KBUILD_TARGET),darwin)
+  # We want -std=c++11 for 4.7 and newer compilers, and -std=c++0x for older ones.
+VBoxNetDHCP_CXXFLAGS += -std=$(if $(VBOX_GCC_VERSION_CXX),$(if $(VBOX_GCC_VERSION_CXX) < 40700,c++0x,c++11),c++0x)
+ endif
+endif
+VBoxNetDHCP_SOURCES = \
+	ClientId.cpp \
+	Config.cpp \
+	DHCPD.cpp \
+	Db.cpp \
+	DhcpMessage.cpp \
+	DhcpOptions.cpp \
+	IPv4Pool.cpp \
+	Timestamp.cpp \
+	VBoxNetDhcpd.cpp \
+	../../Main/glue/VBoxLogRelCreate.cpp \
+	../../Main/glue/GetVBoxUserHomeDirectory.cpp \
+	$(addprefix ../../Devices/Network/lwip-new/,$(LWIP_SOURCES))
+
+VBoxNetDHCP_LIBS = $(LIB_RUNTIME)
+VBoxNetDHCP_LIBS.solaris += socket nsl
+VBoxNetDHCP_LDFLAGS.win = /SUBSYSTEM:windows
+
+ifdef VBOX_WITH_HARDENING
+ $(call VBOX_SET_VER_INFO_DLL,VBoxNetDHCP,VirtualBox DHCP Server (dll),$(VBOX_WINDOWS_ICON_FILE)) # Version info / description.
+else
+ $(call VBOX_SET_VER_INFO_EXE,VBoxNetDHCP,VirtualBox DHCP Server,$(VBOX_WINDOWS_ICON_FILE))       # Version info / description.
+endif
+
+include $(FILE_KBUILD_SUB_FOOTER)
+

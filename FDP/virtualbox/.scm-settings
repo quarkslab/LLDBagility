@@ -1,0 +1,75 @@
+# $Id: .scm-settings $
+## @file
+# Top level source code massager settings.
+#
+# This will be loaded when scm is pointed to any file or directory in the
+# VirtualBox source tree.  It will recursively load all .scm-settings files
+# it find in or above directories or files it's told to work on.  So,
+# .scm-settings files can be placed in sub-directories in the tree to provide
+# additional settins specific to that sub-tree.
+#
+
+#
+# Copyright (C) 2010-2020 Oracle Corporation
+#
+# This file is part of VirtualBox Open Source Edition (OSE), as
+# available from http://www.virtualbox.org. This file is free software;
+# you can redistribute it and/or modify it under the terms of the GNU
+# General Public License (GPL) as published by the Free Software
+# Foundation, in version 2 as it comes in the "COPYING" file of the
+# VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+# hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+#
+
+
+#
+# Global settings.
+#
+# Only consider directories and files that are part of a SVN working set.
+#
+--only-svn-dirs
+--only-svn-files
+--set-svn-eol
+--set-svn-executable
+--set-svn-keywords
+
+#
+# Directories to ignore.
+#
+# These are simple string patterns (see iprt/string.h) and we'll match both the
+# base name as well as the absolute path of each directory we consider for
+# recursion against these patterns.
+#
+--filter-out-dirs  ".svn"
+--filter-out-dirs  "/*out*/."
+--filter-out-dirs  "/webtools/."
+--filter-out-dirs  "/*kBuild*/."
+--filter-out-dirs  "/debian/."
+--filter-out-dirs  "/SlickEdit/."
+--filter-out-dirs  "/src/libs/*/."
+
+
+#
+# Files to ignore.
+#
+# Same format as for the directories, except that we'll also apply them to
+# files specified directly on the command line.
+#
+--filter-out-files "/vslick.h"
+--filter-out-files "*/PkgInfo"
+--filter-out-files "*/*-PkgInfo"
+--filter-out-files "*.plist"
+--filter-out-files "*/Doxyfile*"
+--filter-out-files "*/COPYING"
+--filter-out-files "*/COPYING.LIB"
+--filter-out-files "*/COPYING.CDDL"
+--filter-out-files "*.desktop"
+
+
+#
+# Header guards are by default relative to the parent directory.
+#
+--guard-prefix VBOX_INCLUDED_SRC_
+--guard-relative-to-dir {parent}
+--fix-header-guard-endif
+

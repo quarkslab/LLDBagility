@@ -196,12 +196,18 @@ void* TimerRoutine(LPVOID lpParam)
     }
 }
 
-bool testReadWriteMSR(FDP_SHM* pFDP)
+bool testReadWriteMSR(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t originalMSRValue;
     uint64_t modMSRValue;
@@ -230,67 +236,77 @@ bool testReadWriteMSR(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadWriteRegister(FDP_SHM* pFDP)
+bool testReadWriteRegister(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
 
-    uint64_t originalRAXValue;
-    FDP_READREGISTER(pFDP, 0, FDP_RAX_REGISTER, &originalRAXValue)
+    FDP_Register reg = bAArch64 ? FDP_X0_REGISTER : FDP_RAX_REGISTER;
+
+    uint64_t originalRegValue;
+    FDP_READREGISTER(pFDP, 0, reg, &originalRegValue)
 
     uint64_t TEST_REGISTER_VALUE = 0xDEADBEEFDEADBEEF;
-    FDP_WRITEREGISTER(pFDP, 0, FDP_RAX_REGISTER, TEST_REGISTER_VALUE)
+    FDP_WRITEREGISTER(pFDP, 0, reg, TEST_REGISTER_VALUE)
 
-    uint64_t modRAXValue;
-    FDP_READREGISTER(pFDP, 0, FDP_RAX_REGISTER, &modRAXValue)
-    if (modRAXValue != TEST_REGISTER_VALUE)
+    uint64_t modRegValue;
+    FDP_READREGISTER(pFDP, 0, reg, &modRegValue)
+    if (modRegValue != TEST_REGISTER_VALUE)
     {
-        printf("Register doesn't match %llx != %llx !\n", modRAXValue, TEST_REGISTER_VALUE);
+        printf("Register doesn't match %llx != %llx !\n", modRegValue, TEST_REGISTER_VALUE);
         return false;
     }
 
-    FDP_WRITEREGISTER(pFDP, 0, FDP_RAX_REGISTER, originalRAXValue)
+    FDP_WRITEREGISTER(pFDP, 0, reg, originalRegValue)
 
     printf("[OK]\n");
     return true;
 }
 
-bool testReadWritePhysicalMemory(FDP_SHM* pFDP)
+bool testReadWritePhysicalMemory(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
 
+    uint64_t physicalAddress = bAArch64 ? _1G + 0xc000 : 0xc000;
+
     uint8_t originalPage[4096];
-    FDP_READPHYSICALMEMORY(pFDP, originalPage, 4096, 4096 * 12)
+    FDP_READPHYSICALMEMORY(pFDP, originalPage, 4096, physicalAddress)
 
     uint8_t garbagePage[4096];
     memset(garbagePage, 0xCA, 4096);
-    FDP_WRITEPHYSICALMEMORY(pFDP, garbagePage, 4096, 4096 * 12)
+    FDP_WRITEPHYSICALMEMORY(pFDP, garbagePage, 4096, physicalAddress)
 
     uint8_t modPage[4096];
-    FDP_READPHYSICALMEMORY(pFDP, modPage, 4096, 4096 * 12)
+    FDP_READPHYSICALMEMORY(pFDP, modPage, 4096, physicalAddress)
     if (memcmp(garbagePage, modPage, 4096) != 0)
     {
         printf("Failed to compare garbagePage and modPage !\n");
         return false;
     }
 
-    FDP_WRITEPHYSICALMEMORY(pFDP, originalPage, 4096, 4096 * 12)
+    FDP_WRITEPHYSICALMEMORY(pFDP, originalPage, 4096, physicalAddress)
 
     printf("[OK]\n");
     return true;
 }
 
-bool testReadWriteVirtualMemorySpeed(FDP_SHM* pFDP)
+bool testReadWriteVirtualMemorySpeed(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t tempVirtualAddress = 0;
     uint64_t originalMSRValue;
@@ -317,7 +333,7 @@ bool testReadWriteVirtualMemorySpeed(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadWritePhysicalMemorySpeed(FDP_SHM* pFDP)
+bool testReadWritePhysicalMemorySpeed(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -344,7 +360,7 @@ bool testReadWritePhysicalMemorySpeed(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadLargePhysicalMemory(FDP_SHM* pFDP)
+bool testReadLargePhysicalMemory(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -361,7 +377,7 @@ bool testReadLargePhysicalMemory(FDP_SHM* pFDP)
     }
 
     uint64_t RipValue;
-    FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &RipValue)
+    FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &RipValue)
 
     uint64_t physicalRipValue;
     FDP_VIRTUALTOPHYSICAL(pFDP, 0, RipValue, &physicalRipValue)
@@ -378,12 +394,18 @@ bool testReadLargePhysicalMemory(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadWriteVirtualMemory(FDP_SHM* pFDP)
+bool testReadWriteVirtualMemory(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t tempVirtualAddress = 0;
 
@@ -415,7 +437,7 @@ bool testReadWriteVirtualMemory(FDP_SHM* pFDP)
     return true;
 }
 
-bool testGetStatePerformance(FDP_SHM* pFDP)
+bool testGetStatePerformance(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -437,12 +459,18 @@ bool testGetStatePerformance(FDP_SHM* pFDP)
     return true;
 }
 
-bool testVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
+bool testVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint32_t CPUCount;
     if (FDP_GetCpuCount(pFDP, &CPUCount) == false)
@@ -507,12 +535,18 @@ bool testVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
     return true;
 }
 
-bool testPhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
+bool testPhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t originalMSRValue;
     FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
@@ -567,12 +601,18 @@ bool testPhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
     return true;
 }
 
-bool testMultiplePhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
+bool testMultiplePhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t originalMSRValue;
     FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
@@ -631,12 +671,18 @@ bool testMultiplePhysicalSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointT
     return true;
 }
 
-bool testMultipleVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType)
+bool testMultipleVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointType, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint32_t CPUCount;
     if (FDP_GetCpuCount(pFDP, &CPUCount) == false)
@@ -700,12 +746,18 @@ bool testMultipleVirtualSyscallBP(FDP_SHM* pFDP, FDP_BreakpointType BreakpointTy
     return true;
 }
 
-bool testLargeVirtualPageSyscallBP(FDP_SHM* pFDP)
+bool testLargeVirtualPageSyscallBP(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t originalMSRValue;
     FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
@@ -754,12 +806,18 @@ bool testLargeVirtualPageSyscallBP(FDP_SHM* pFDP)
     return true;
 }
 
-bool testLargePhysicalPageSyscallBP(FDP_SHM* pFDP)
+bool testLargePhysicalPageSyscallBP(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t originalMSRValue;
     FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
@@ -811,7 +869,7 @@ bool testLargePhysicalPageSyscallBP(FDP_SHM* pFDP)
     return true;
 }
 
-bool testState(FDP_SHM* pFDP)
+bool testState(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -887,40 +945,49 @@ bool testState(FDP_SHM* pFDP)
         return false;
     }
 
-    uint64_t originalMSRValue;
-    FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
-
-    int64_t breakpointId = FDP_SetBreakpoint(pFDP, 0, FDP_SOFTHBP, -1, FDP_EXECUTE_BP, FDP_VIRTUAL_ADDRESS,
-                                             originalMSRValue, 1, FDP_NO_CR3);
-    if (breakpointId < 0)
+    if (!bAArch64)
     {
-        printf("Failed to insert breakpoint !\n");
-        return false;
+        uint64_t originalMSRValue;
+        FDP_READMSR(pFDP, 0, MSR_LSTAR, &originalMSRValue)
+
+        int64_t breakpointId = FDP_SetBreakpoint(pFDP, 0, FDP_SOFTHBP, -1, FDP_EXECUTE_BP, FDP_VIRTUAL_ADDRESS,
+                                                 originalMSRValue, 1, FDP_NO_CR3);
+        if (breakpointId < 0)
+        {
+            printf("Failed to insert breakpoint !\n");
+            return false;
+        }
+
+        FDP_RESUME(pFDP)
+
+        while (true)
+        {
+            FDP_State state;
+            FDP_GETSTATE(pFDP, &state)
+            if (state & FDP_STATE_BREAKPOINT_HIT && !(state & FDP_STATE_DEBUGGER_ALERTED))
+                break;
+            usleep(1000 * 100);
+        }
+
+        FDP_UNSETBREAKPOINT(pFDP, breakpointId)
     }
-
-    FDP_RESUME(pFDP)
-
-    while (true)
-    {
-        FDP_State state;
-        FDP_GETSTATE(pFDP, &state)
-        if (state & FDP_STATE_BREAKPOINT_HIT && !(state & FDP_STATE_DEBUGGER_ALERTED))
-            break;
-        usleep(1000 * 100);
-    }
-
-    FDP_UNSETBREAKPOINT(pFDP, breakpointId)
 
     printf("[OK]\n");
     return true;
 }
 
-bool testDebugRegisters(FDP_SHM* pFDP)
+bool testDebugRegisters(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t oldDR0Value;
     uint64_t oldDR7Value;
@@ -978,10 +1045,14 @@ void* testStateThread(LPVOID lpParam)
 void* testReadRegisterThread(LPVOID lpParam)
 {
     FDP_SHM* pFDP = (FDP_SHM*)lpParam;
+
+    uint64_t   v;
+    const bool bAArch64 = FDP_ReadRegister(pFDP, 0, FDP_X0_REGISTER, &v);
+
     while (threadRunning)
     {
         uint64_t RegisterValue;
-        FDP_READREGISTER(pFDP, 0, FDP_RAX_REGISTER, &RegisterValue)
+        FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_X0_REGISTER : FDP_RAX_REGISTER, &RegisterValue)
     }
     return 0;
 }
@@ -989,6 +1060,7 @@ void* testReadRegisterThread(LPVOID lpParam)
 void* testReadMemoryThread(LPVOID lpParam)
 {
     FDP_SHM* pFDP = (FDP_SHM*)lpParam;
+
     while (threadRunning)
     {
         uint8_t TempBuffer[1024];
@@ -997,7 +1069,7 @@ void* testReadMemoryThread(LPVOID lpParam)
     return 0;
 }
 
-bool testMultiThread(FDP_SHM* pFDP)
+bool testMultiThread(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1027,7 +1099,7 @@ bool testMultiThread(FDP_SHM* pFDP)
     return true;
 }
 
-bool testUnsetBreakpoint(FDP_SHM* pFDP)
+bool testUnsetBreakpoint(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1041,7 +1113,7 @@ bool testUnsetBreakpoint(FDP_SHM* pFDP)
     return true;
 }
 
-bool testManyBreakpoints(FDP_SHM* pFDP)
+bool testManyBreakpoints(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1049,7 +1121,7 @@ bool testManyBreakpoints(FDP_SHM* pFDP)
     FDP_PAUSE(pFDP)
 
     uint64_t RipValue;
-    FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &RipValue)
+    FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &RipValue)
 
     for (uint64_t i = 0; i < 1024; ++i)
         FDP_SetBreakpoint(pFDP, 0, FDP_SOFTHBP, -1, FDP_EXECUTE_BP, FDP_VIRTUAL_ADDRESS, RipValue + i * 4096, 1,
@@ -1061,7 +1133,7 @@ bool testManyBreakpoints(FDP_SHM* pFDP)
     return true;
 }
 
-bool testSingleStep(FDP_SHM* pFDP)
+bool testSingleStep(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1082,7 +1154,7 @@ bool testSingleStep(FDP_SHM* pFDP)
     return true;
 }
 
-bool testSingleStepSpeed(FDP_SHM* pFDP)
+bool testSingleStepSpeed(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1109,12 +1181,18 @@ bool testSingleStepSpeed(FDP_SHM* pFDP)
     return true;
 }
 
-bool testSaveRestore(FDP_SHM* pFDP)
+bool testSaveRestore(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     if (FDP_Save(pFDP) == false)
     {
@@ -1123,7 +1201,7 @@ bool testSaveRestore(FDP_SHM* pFDP)
     }
 
     uint64_t OriginalRipValue;
-    FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &OriginalRipValue)
+    FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &OriginalRipValue)
 
     FDP_RESUME(pFDP)
 
@@ -1138,7 +1216,7 @@ bool testSaveRestore(FDP_SHM* pFDP)
         }
 
         uint64_t NewRipValue;
-        FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &NewRipValue)
+        FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &NewRipValue)
 
         if (OriginalRipValue != NewRipValue)
         {
@@ -1151,10 +1229,10 @@ bool testSaveRestore(FDP_SHM* pFDP)
         //Wait for Rip change
         uint64_t OldRipValue;
         uint64_t RipValue;
-        FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &OldRipValue)
+        FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &OldRipValue)
         while (true)
         {
-            FDP_READREGISTER(pFDP, 0, FDP_RIP_REGISTER, &RipValue)
+            FDP_READREGISTER(pFDP, 0, bAArch64 ? FDP_PC_REGISTER : FDP_RIP_REGISTER, &RipValue)
             if (RipValue != OldRipValue)
                 break;
         }
@@ -1167,12 +1245,18 @@ bool testSaveRestore(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadAllPhysicalMemory(FDP_SHM* pFDP)
+bool testReadAllPhysicalMemory(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     uint64_t PhysicalMaxAddress = 0;
     if (FDP_GetPhysicalMemorySize(pFDP, &PhysicalMaxAddress) == false)
@@ -1196,7 +1280,7 @@ bool testReadAllPhysicalMemory(FDP_SHM* pFDP)
     return true;
 }
 
-bool testReadWriteAllPhysicalMemory(FDP_SHM* pFDP)
+bool testReadWriteAllPhysicalMemory(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1223,12 +1307,18 @@ bool testReadWriteAllPhysicalMemory(FDP_SHM* pFDP)
     return true;
 }
 
-bool testSetCr3(FDP_SHM* pFDP)
+bool testSetCr3(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     // Get a valid CR3 and RIP
     uint64_t firstCr3;
@@ -1298,12 +1388,18 @@ bool testSetCr3(FDP_SHM* pFDP)
     return true;
 }
 
-bool testSingleStepPageBreakpoint(FDP_SHM* pFDP)
+bool testSingleStepPageBreakpoint(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
 
     FDP_PAUSE(pFDP)
+
+    if (bAArch64)
+    {
+        printf("[OK] NOT IMPLEMENTED YET\n");
+        return true;
+    }
 
     bool bReturnValue = false;
 
@@ -1354,7 +1450,7 @@ bool testSingleStepPageBreakpoint(FDP_SHM* pFDP)
     return bReturnValue;
 }
 
-bool testPauseSingleStep(FDP_SHM* pFDP)
+bool testPauseSingleStep(FDP_SHM* pFDP, bool bAArch64)
 {
     printf("%s ...", __FUNCTION__);
     fflush(stdout);
@@ -1383,74 +1479,77 @@ int testFDP(const char* pVMName, bool bTestSpeed)
             pthread_t t1;
             pthread_create(&t1, NULL, TimerRoutine, NULL);
 
+            uint64_t   v;
+            const bool bAArch64 = FDP_IsAArch64(pFDP);
+
             if (FDP_Pause(pFDP) == false)
                 goto Fail;
-            if (testUnsetBreakpoint(pFDP) == false)
+            if (testUnsetBreakpoint(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testReadWriteRegister(pFDP) == false)
+            if (testReadWriteRegister(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testPauseSingleStep(pFDP) == false)
+            if (testPauseSingleStep(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testManyBreakpoints(pFDP) == false)
+            if (testManyBreakpoints(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testSingleStepPageBreakpoint(pFDP) == false)
+            if (testSingleStepPageBreakpoint(pFDP, bAArch64) == false)
                 goto Fail;
-            if (bTestSpeed && testSingleStepSpeed(pFDP) == false)
+            if (bTestSpeed && testSingleStepSpeed(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testReadWriteMSR(pFDP) == false)
+            if (testReadWriteMSR(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testSetCr3(pFDP) == false)
+            if (testSetCr3(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testMultiThread(pFDP) == false)
+            if (testMultiThread(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testState(pFDP) == false)
+            if (testState(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testVirtualSyscallBP(pFDP, FDP_SOFTHBP) == false)
+            if (testVirtualSyscallBP(pFDP, FDP_SOFTHBP, bAArch64) == false)
                 goto Fail;
-            if (testReadWritePhysicalMemory(pFDP) == false)
+            if (testReadWritePhysicalMemory(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testReadWriteVirtualMemory(pFDP) == false)
+            if (testReadWriteVirtualMemory(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testGetStatePerformance(pFDP) == false)
+            if (testGetStatePerformance(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testDebugRegisters(pFDP) == false)
+            if (testDebugRegisters(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testVirtualSyscallBP(pFDP, FDP_PAGEHBP) == false)
+            if (testVirtualSyscallBP(pFDP, FDP_PAGEHBP, bAArch64) == false)
                 goto Fail;
-            if (testVirtualSyscallBP(pFDP, FDP_SOFTHBP) == false)
+            if (testVirtualSyscallBP(pFDP, FDP_SOFTHBP, bAArch64) == false)
                 goto Fail;
-            if (testPhysicalSyscallBP(pFDP, FDP_PAGEHBP) == false)
+            if (testPhysicalSyscallBP(pFDP, FDP_PAGEHBP, bAArch64) == false)
                 goto Fail;
-            if (testPhysicalSyscallBP(pFDP, FDP_SOFTHBP) == false)
+            if (testPhysicalSyscallBP(pFDP, FDP_SOFTHBP, bAArch64) == false)
                 goto Fail;
-            if (testMultipleVirtualSyscallBP(pFDP, FDP_PAGEHBP) == false)
+            if (testMultipleVirtualSyscallBP(pFDP, FDP_PAGEHBP, bAArch64) == false)
                 goto Fail;
-            if (testMultipleVirtualSyscallBP(pFDP, FDP_SOFTHBP) == false)
+            if (testMultipleVirtualSyscallBP(pFDP, FDP_SOFTHBP, bAArch64) == false)
                 goto Fail;
-            if (testMultiplePhysicalSyscallBP(pFDP, FDP_PAGEHBP) == false)
+            if (testMultiplePhysicalSyscallBP(pFDP, FDP_PAGEHBP, bAArch64) == false)
                 goto Fail;
-            if (testMultiplePhysicalSyscallBP(pFDP, FDP_SOFTHBP) == false)
+            if (testMultiplePhysicalSyscallBP(pFDP, FDP_SOFTHBP, bAArch64) == false)
                 goto Fail;
-            if (testReadAllPhysicalMemory(pFDP) == false)
+            if (testReadAllPhysicalMemory(pFDP, bAArch64) == false)
                 goto Fail;
             // if (testReadWriteAllPhysicalMemory(pFDP) == false)
             //     goto Fail;
-            if (testLargeVirtualPageSyscallBP(pFDP) == false)
+            if (testLargeVirtualPageSyscallBP(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testLargePhysicalPageSyscallBP(pFDP) == false)
+            if (testLargePhysicalPageSyscallBP(pFDP, bAArch64) == false)
                 goto Fail;
-            if (bTestSpeed && testReadWriteVirtualMemorySpeed(pFDP) == false)
+            if (bTestSpeed && testReadWriteVirtualMemorySpeed(pFDP, bAArch64) == false)
                 goto Fail;
-            if (bTestSpeed && testReadWritePhysicalMemorySpeed(pFDP) == false)
+            if (bTestSpeed && testReadWritePhysicalMemorySpeed(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testReadLargePhysicalMemory(pFDP) == false)
+            if (testReadLargePhysicalMemory(pFDP, bAArch64) == false)
                 goto Fail;
-            if (testSaveRestore(pFDP) == false)
+            if (testSaveRestore(pFDP, bAArch64) == false)
                 goto Fail;
 
             returnCode = 0;
         Fail:
-            testUnsetBreakpoint(pFDP);
+            testUnsetBreakpoint(pFDP, bAArch64);
             FDP_RESUME(pFDP)
         }
     }

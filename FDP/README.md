@@ -1,87 +1,89 @@
-# FDP
-This folder contains a port of the original [Fast Debugging Protocol (FDP)](https://winbagility.github.io/) to macOS hosts and VirtualBox 6.1.6. The following sections detail the steps required to 1) build VirtualBox with the FDP patch, 2) build the FDP dylib and 3) install PyFDP for LLDBagility.
+# Fast Debugging Protocol (FDP)
 
-## Important notes
-- Each time the host reboots, before starting any virtual machine load the VirtualBox drivers by executing the VirtualBox `loadall.sh` script. Note that to load unsigned drivers it is required to [disable System Integrity Protection (SIP)](https://developer.apple.com/library/archive/documentation/Security/Conceptual/System_Integrity_Protection_Guide/ConfiguringSystemIntegrityProtection/ConfiguringSystemIntegrityProtection.html) on the host.
-- If needed, it's possible to install the official VirtualBox Extension Pack.
-- Take a snapshot of the virtual machine before starting debugging, and be aware that crashes or abrupt terminations of the VM may render it unable to start again.
+- API for virtual machine introspection and debugging
+- Supports x86-64 and AArch64
+- Provides patches for VirtualBox
+- Provides Python bindings
+- Originally from [Winbagility](https://github.com/Winbagility/Winbagility), now used by [LLDBagility](https://github.com/quarkslab/LLDBagility) on macOS hosts
 
-## 0) Trying the prebuilt binaries
+## Notes to users
 
-Before building VirtualBox and FDP, try the prebuilt binaries uploaded in the Releases section. Binaries were built on macOS 10.14.5 Mojave and tested (at least) on macOS 10.14.5 Mojave and macOS 10.15.4 Catalina.
+- Backup your virtual machine before debugging with FDP, since crashes and abrupt terminations may cause the VM to not boot anymore.
+- The FDP server code for VirtualBox supports virtual machines configured to use one virtual CPU and at most 2 GB of RAM.
+- Before starting any virtual machine load the VirtualBox drivers by executing the VirtualBox `loadall.sh` script. Note that to load unsigned drivers it is required to [disable System Integrity Protection (SIP)](https://developer.apple.com/library/archive/documentation/Security/Conceptual/System_Integrity_Protection_Guide/ConfiguringSystemIntegrityProtection/ConfiguringSystemIntegrityProtection.html) on the host. Drivers have to be reloaded every time the host reboots.
+- If needed, it should be possible to install the official VirtualBox Extension Pack.
 
-### VirtualBox
-0. Download `VirtualBox-6.1.6-FDP-macOS.zip` from the Releases section and unzip it anywhere in the file system.
+## Quick start
+
+The Releases section contains prebuilt binaries whose installation is explained in this section. Building instructions are provided in the next sections.
+
+### Prebuilt FDP client code
+
+1. Download the PyFDP wheel from the latest release in Releases section.
+1. Install the wheel for any Python 3 interpreter. To use FDP with LLDBagility, install the wheel for the Python interpreter used by LLDB. For example, if using LLDB from the Command Line Tools:
+
+        Downloads$ sudo /Library/Developer/CommandLineTools/usr/bin/python3 -m pip install ./PyFDP-20.0-py3-none-any.whl -t /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.7/lib/python3.7/site-packages/
+
+   Then, check that PyFDP can be used by LLDB:
+
+        $ lldb
+        (lldb) script
+        Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
+        >>> import PyFDP
+        >>>
+
+### Prebuilt VirtualBox for macOS hosts with the FDP server code
+
+1. Download the zipped VirtualBox from the latest release in Releases section and unzip it anywhere in the file system.
 1. Load the VirtualBox drivers (SIP must be disabled):
 
-        VirtualBox-6.1.6-FDP-macOS$ sudo ./loadall.sh
+        VirtualBox$ sudo ./loadall.sh
 
-1. Double-click or `open` the VirtualBox application `VirtualBox.app`.
-1. Import any virtual machine and check that it starts and runs correctly.
+1. Double-click or `open` the VirtualBox application:
 
-### FDP/PyFDP
-0. Download `libFDP.dylib` from the Releases section and move it to `~/LLDBagility/FDP/PyFDP/PyFDP/libFDP.dylib`;
-1. Install and test PyFDP as described in section 3) below.
+        VirtualBox$ open VirtualBox.app
 
-If the prebuilt binaries seem to work, that's it! Otherwise, try building VirtualBox and FDP as described in the next sections.
+1. Import any virtual machine. Then, in the VM settings in VirtualBox, set the number of virtual CPUs to 1 and the RAM to 2 GB maximum. Then, starts the VM and check that it runs correctly. Lastly, download `testFDP` from the latest release in Releases section, execute the FDP tests (which change the state of the machine) and check they succeed:
 
-## 1) Building VirtualBox with the FDP patch for macOS hosts
-The easiest way to build VirtualBox is within a virtual machine running macOS Mojave, and the easiest way to test the VirtualBox build is within the same VM thanks to nested virtualisation. VirtualBox requires Xcode 6.2 for building, which fails with SIGABRT on macOS Catalina.
+        Downloads$ ./testFDP macos-mojave-18F32
 
-The following instructions are adapted from this thread: https://forums.virtualbox.org/viewtopic.php?t=83521.
+## Building the FDP client code
 
-0. Download and unzip the VirtualBox [6.1.6](https://download.virtualbox.org/virtualbox/6.1.6/VirtualBox-6.1.6.tar.bz2) sources.
-1. Apply the provided FDP patch:
+FDP has been built only on macOS (but with little effort it should also compile on Linux).
 
-        VirtualBox-6.1.6$ git apply ~/LLDBagility/FDP/VirtualBox/VirtualBox-6.1.6-FDP-macOS.diff
+1. Download and install [Homebrew](https://brew.sh).
+1. Install the FDP dependencies:
 
-1. Symlink or copy the FDP headers and sources:
+        $ brew install cmake
 
-        VirtualBox-6.1.6$ ln -fs ~/LLDBagility/FDP/FDP include/
-        VirtualBox-6.1.6$ ln -fs ~/LLDBagility/FDP/FDP/include/* include/
-        VirtualBox-6.1.6$ ln -fs ~/LLDBagility/FDP/FDP/FDP.c src/VBox/Debugger/
+1. Build FDP:
 
-1. Set up the VirtualBox dependencies:
-    - Download and install [Homebrew](https://brew.sh/), then execute `/usr/local/bin/brew install libidl glib openssl pkg-config`.
-    - Download and install [MacPorts](https://www.macports.org/install.php), then execute `sudo /opt/local/bin/port install qt56`.
-    - Download [Xcode_6.2.dmg](https://download.developer.apple.com/Developer_Tools/Xcode_6.2/Xcode_6.2.dmg) (log in with a free Apple ID is required) and mount it (e.g. `open Xcode_6.2.dmg`), then extract the required files:
+        FDP$ make fdp
 
-            VirtualBox-6.1.6$ tools/darwin.amd64/bin/xcode-6.2-extractor.sh
+## Building VirtualBox for macOS hosts with the FDP server code
 
-1. Start the build by running the provided Python script:
+The easiest and supported way to build VirtualBox is within a virtual machine running macOS Mojave, and the simplest way to test the VirtualBox build is within the same VM thanks to nested virtualisation. VirtualBox requires Xcode 6.2 for building (which fails with `SIGABRT` on macOS Catalina).
 
-        VirtualBox-6.1.6$ ~/LLDBagility/FDP/VirtualBox/build.py
+In addition to the steps for building the FDP client code:
 
-Building takes around 15 minutes; once finished, the VirtualBox application will be at `~/LLDBagility-vbox-build/darwin.amd64/release/dist/VirtualBox.app`. To run this application on a different machine, execute the provided Python script that creates a redistributable VirtualBox at `~/LLDBagility-vbox/`:
+1. Install some VirtualBox dependencies with Homebrew:
 
-        VirtualBox-6.1.6$ ~/LLDBagility/FDP/VirtualBox/pack.py
+        $ brew install libidl glib openssl pkg-config
 
-## 2) Building FDP
-0. Download and install CMake with e.g. Homebrew:
+1. Install Qt with [MacPorts](https://www.macports.org/install.php):
 
-    ~$ brew install cmake
+        $ sudo /opt/local/bin/port install qt56
 
-1. Build the FDP dylib (automatically copied to `~/LLDBagility/FDP/PyFDP/PyFDP/`) with `make`:
+1. Download [Xcode_6.2.dmg](https://download.developer.apple.com/Developer_Tools/Xcode_6.2/Xcode_6.2.dmg) (log in with a free Apple ID is required) and mount it:
 
-    LLDBagility/FDP$ make
+        Downloads$ open Xcode_6.2.dmg
 
-1. (Optional, but suggested) Start any virtual machine and check that the FDP tests succeed:
+1. Run the VirtualBox extractor script:
 
-    LLDBagility/FDP$ build/bin/testFDP macos-mojave-18F32
+        FDP$ virtualbox/tools/darwin.amd64/bin/xcode-6.2-extractor.sh
 
-## 3) Installing PyFDP
-PyFDP can be installed through pip for any recent Python 3 interpreter, for example:
+1. Build FDP and VirtualBox:
 
-     /usr/local/bin/python3 -m pip install ~/LLDBagility/FDP/PyFDP/
+        FDP$ make virtualbox
 
-For LLDBagility, PyFDP must be installed for the Python interpreter used by LLDB, e.g.:
-
-    sudo /Library/Developer/CommandLineTools/usr/bin/python3 -m pip install ~/LLDBagility/FDP/PyFDP/ -t /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.7/lib/python3.7/site-packages/
-
-After installing, check that PyFDP can be used by LLDB by starting the debugger, executing `script`, and checking that `import PyFDP` succeeds:
-
-    ~$ lldb
-    (lldb) script
-    Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
-    >>> import PyFDP
-    >>>
+    Building takes around 15 minutes; once finished, the VirtualBox application will be at `out-latest/VirtualBox/VirtualBox.app`.

@@ -40,6 +40,7 @@ class FDP(object):
     FDP_STATE_HARD_BREAKPOINT_HIT = 0x8
 
     # FDP_Register
+    # x86-64
     FDP_RAX_REGISTER = 0x0
     FDP_RBX_REGISTER = 0x1
     FDP_RCX_REGISTER = 0x2
@@ -86,6 +87,44 @@ class FDP(object):
     FDP_CR3_REGISTER = 0x2B
     FDP_CR4_REGISTER = 0x2C
     FDP_CR8_REGISTER = 0x2D
+    FDP_LDTR_REGISTER = 0x2E
+    FDP_LDTRB_REGISTER = 0x2F
+    FDP_LDTRL_REGISTER = 0x30
+    FDP_TR_REGISTER = 0x31
+    # AArch64
+    FDP_X0_REGISTER = 0x100
+    FDP_X1_REGISTER = 0x101
+    FDP_X2_REGISTER = 0x102
+    FDP_X3_REGISTER = 0x103
+    FDP_X4_REGISTER = 0x104
+    FDP_X5_REGISTER = 0x105
+    FDP_X6_REGISTER = 0x106
+    FDP_X7_REGISTER = 0x107
+    FDP_X8_REGISTER = 0x108
+    FDP_X9_REGISTER = 0x109
+    FDP_X10_REGISTER = 0x10A
+    FDP_X11_REGISTER = 0x10B
+    FDP_X12_REGISTER = 0x10C
+    FDP_X13_REGISTER = 0x10D
+    FDP_X14_REGISTER = 0x10E
+    FDP_X15_REGISTER = 0x10F
+    FDP_X16_REGISTER = 0x110
+    FDP_X17_REGISTER = 0x111
+    FDP_X18_REGISTER = 0x112
+    FDP_X19_REGISTER = 0x113
+    FDP_X20_REGISTER = 0x114
+    FDP_X21_REGISTER = 0x115
+    FDP_X22_REGISTER = 0x116
+    FDP_X23_REGISTER = 0x117
+    FDP_X24_REGISTER = 0x118
+    FDP_X25_REGISTER = 0x119
+    FDP_X26_REGISTER = 0x11A
+    FDP_X27_REGISTER = 0x11B
+    FDP_X28_REGISTER = 0x11C
+    FDP_X29_REGISTER = 0x11D
+    FDP_LR_REGISTER = 0x11E
+    FDP_SP_REGISTER = 0x11F
+    FDP_PC_REGISTER = 0x120
 
     def __init__(self, name):
         FDP_Register = c_uint32
@@ -284,9 +323,11 @@ class FDP(object):
 
     def WritePhysicalMemory(self, PhysicalAddress, WriteBuffer):
         """ Attempt to write a buffer at a VM physical memory address. """
-        Buffer = create_string_buffer(int(WriteBuffer))
-        pBuffer = pointer(Buffer)
-        return self._fdpdll.FDP_WritePhysicalMemory(self._pFDP, pBuffer, len(WriteBuffer), c_uint64(PhysicalAddress))
+        Buffer = create_string_buffer(WriteBuffer)
+        pBuffer = cast(pointer(Buffer), POINTER(c_uint8))
+        return self._fdpdll.FDP_WritePhysicalMemory(
+            self._pFDP, pBuffer, len(WriteBuffer), c_uint64(PhysicalAddress)
+        )
 
     def WriteVirtualMemory(self, VirtualAddress, WriteBuffer, CpuId=FDP_CPU0):
         """ Attempt to write a buffer at a VM virtual memory address.
