@@ -1,0 +1,8 @@
+/PyFDP/PyFDP.egg-info/
+/PyFDP/PyFDP/libFDP.dylib
+/PyFDP/build/
+/PyFDP/dist/
+/build/
+/env/
+/out-latest/
+__pycache__/
