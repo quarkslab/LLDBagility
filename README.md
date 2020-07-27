@@ -1,58 +1,64 @@
 # LLDBagility
-LLDBagility is a tool for **debugging macOS virtual machines** with the aid of the Fast Debugging Protocol (FDP).
 
-For all information, read the accompanying blog posts:
+LLDBagility is a tool for macOS kernel debugging that allows to connect LLDB to any macOS virtual machine running on a patched version of the VirtualBox hypervisor, thanks to the capabilities of virtual machine introspection offered by the Fast Debugging Protocol (FDP).
+
+For more information, read the accompanying blog posts:
 
 - [An overview of macOS kernel debugging](https://blog.quarkslab.com/an-overview-of-macos-kernel-debugging.html)
 - [LLDBagility: practical macOS kernel debugging](https://blog.quarkslab.com/lldbagility-practical-macos-kernel-debugging.html)
 
 ## Features
+
 LLDBagility implements a set of new LLDB commands that allows the debugger to:
+
 - attach to running macOS VirtualBox virtual machines and debug their kernel, stealthily, without the need of changing the guest OS (e.g. no necessity of DEVELOPMENT or DEBUG kernels, boot-args modification or SIP disabling) and with minimal changes to the configuration of the VM;
 - interrupt (and later resume) the execution of the guest kernel at any moment;
 - set hardware breakpoints anywhere in kernel code, even at the start of the boot process;
 - set hardware watchpoints that trigger on read and/or write accesses of the specified memory locations;
 - save and restore the state of the VM in a few seconds.
 
+These commands are intended to be used alongside the ones already available in LLDB, like `register read`, `memory write`, `breakpoint set` (for software breakpoints), `step` and all the others. Furthermore, in case the Kernel Debug Kit of the debugged kernel is available for use (and possibly even when it isn’t), the vast majority of lldbmacros also work as expected when loaded in the debugger.
+
 ## Files
+
 - [DWARFutils/](DWARFutils/): scripts for working with DWARF files
-- [FDP/](FDP/): Fast Debugging Protocol for macOS hosts and VirtualBox 5.2.14 and 6.0.8
+- [FDP/](FDP/): Fast Debugging Protocol for macOS hosts and VirtualBox
 - [KDKutils/](KDKutils/): scripts for working with Kernel Debug Kits (KDKs) and lldbmacros
-- [KDPutils/](KDPutils/): Python reimplementation of the KDP protocol
+- [kdputils/](kdputils/): Python reimplementation of the KDP protocol
 - [LLDBagility/](LLDBagility/): the tool
 - [misc/](misc/): helper scripts for creating macOS Mojave VMs
 
-In the Releases section:
-- `data.zip`: kernels and lldbmacros used in some of the examples
-- `VirtualBox-5.2.14_FDP.app.zip`: prebuilt VirtualBox 5.2.14 app with the FDP patch for macOS hosts
-- `VirtualBox-6.0.8_FDP.app.zip`: prebuilt VirtualBox 6.0.8 app with the FDP patch for macOS hosts
-
 ## Requisites
-- A **recent version of macOS as host OS**, with the LLDB debugger (can be installed with e.g. `xcode-select --install`)
-- A working build of VirtualBox with the FDP patch for macOS hosts along with the PyFDP bindings (instructions in the dedicated [README](FDP/))
-- A VirtualBox VM with any version of macOS as guest OS
-- A copy of the macOS kernel binary of the guest (not needed if the guest has the same kernel of the host, or if the Kernel Debug Kit of the guest kernel is installed in the host)
-- The KDPutils Python package (instructions in the dedicated [README](KDPutils/))
 
-Note that both packages PyFDP and KDPutils must be installed for the Python version used by LLDB (likely Python 2). LLDBagility has been tested with LLDB from the Command Line Tools and the Python 2 interpreter shipped with macOS, but other versions of these software should work as well; for example, to use Python 2 from Homebrew run LLDB with `env DYLD_FRAMEWORK_PATH="$(brew --prefix python@2)/Frameworks/" lldb`.
+- A recent version of macOS as host OS
+- A recent version of the LLDB debugger (can be installed with e.g. `xcode-select --install`)
+- The kdputils Python package (see the dedicated [README](kdputils/README.md))
+- A working build of VirtualBox with the FDP patch for macOS hosts, along with the PyFDP bindings (see the dedicated [README](FDP/README.md))
+- A VirtualBox VM with any version of macOS as guest OS, along with a copy of the guest macOS kernel binary (not needed if the guest has the same kernel of the host, or if the Kernel Debug Kit of the guest kernel is installed in the host)
+
+Note that both packages PyFDP and kdputils must be installed for the Python interpreter used by LLDB.
 
 ## Installation
+
 Assuming all requisites are satisfied, simply add `command script import <path-to-LLDBagility>/LLDBagility/lldbagility.py` to `~/.lldbinit`.
 
 ## Usage
+
 1. Start the macOS virtual machine to debug and LLDB;
 2. (required only if the kernel binary of the guest is different from the kernel of the host and no KDK for the guest kernel is installed in the host) in LLDB, execute the command `target create <path-to-guest-kernel-binary>`;
 3. in LLDB, execute the command `fdp-attach <name-of-macos-vm>` to start debugging the VM.
 
 The new LLDB commands implemented by LLDBagility are:
+
 - `fdp-attach` or `fa`, to connect the debugger to a running macOS VirtualBox virtual machine;
 - `fdp-hbreakpoint` or `fh`, to set and unset read/write/execute hardware breakpoints;
-- `fdp-interrupt` or `fi`, to pause the execution of the VM and return the control to the debugger (equivalent to the known sudo dtrace -w -n "BEGIN { breakpoint(); }");
+- `fdp-interrupt` or `fi`, to pause the execution of the VM and return the control to the debugger (equivalent to `sudo dtrace -w -n "BEGIN { breakpoint(); }"` );
 - `fdp-save` or `fs`, to save the current state of the VM;
 - `fdp-restore` or `fr`, to restore the VM to the last saved state.
 
 In the debugger, use `help <command>` and `<command> -h` to see the command usage, like:
-```
+
+```bash
 (lldb) help fdp-attach
      For more information run 'help fdp-attach'  Expects 'raw' input (see 'help raw-input'.)
 
@@ -73,18 +79,19 @@ optional arguments:
   -h, --help  show this help message and exit
 ```
 
-## Important notes
-- As per current FDP limitations, set the macOS VM to use one CPU only and less or equal than 2 GB of RAM (in VirtualBox' settings)
+## Notes to users
+
+- As per current FDP limitations, in the VirtualBox settings set the macOS VM to use one CPU only and less or equal than 2 GB of RAM
 - Do not connect multiple instances of LLDBagility to the same macOS VM at the same time
-- If the macOS VM reboots (for any reason), redo `fdp-attach` (the kernel slide changes and LLDB is not aware of this)
+- If the macOS VM reboots (for any reason), re-execute `fdp-attach` (the kernel slide changes and LLDB is not aware of this)
 - If debugging seems slow or intermittent, disable App Nap in the macOS host
 - Pause the kernel execution before setting software breakpoints or LLDB will complain
 - Pause the kernel execution before setting hardware breakpoints with `fdp-hbreakpoint` or LLDB will return `Invalid expression`
 - Preferably load lldbmacros after attaching, otherwise the error `FATAL FAILURE: Unable to find kdp_thread state for this connection.` is raised (and some macros breaks)
-- LLBDagility should work out of the box from XNU 4903.251.3 (the latest at the time of writing) to XNU 1486.2.11; before that, minor adjustments are required in `STUBVM.read_virtual_memory()` so that the fake `kdp` struct matches the one used by the kernel
 
 ## Example session
-```
+
+```bash
 $ env PATH="/usr/bin:/bin:/usr/sbin:/sbin" lldb
 (lldb) fdp-attach macos-mojave-18E226
 LLDBagility
@@ -159,3 +166,7 @@ task                 pid    #acts  tablesize  command
 0xffffff80179d93c0   220    4      85         com.apple.Ambien
 Total Table size: 13619
 ```
+
+## License
+
+All the material in this repository is released under the Apache License version 2.0, with the exception of the VirtualBox sources patched for FDP which are released under the GNU General Public License version 2 in accordance with the VirtualBox license.

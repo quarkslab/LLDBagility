@@ -58,7 +58,7 @@ FDP has been built only on macOS (but with little effort it should also compile 
 
 1. Build FDP:
 
-        FDP$ make fdp
+        $ make fdp
 
 ## Building VirtualBox for macOS hosts with the FDP server code
 
@@ -80,10 +80,10 @@ In addition to the steps for building the FDP client code:
 
 1. Run the VirtualBox extractor script:
 
-        FDP$ virtualbox/tools/darwin.amd64/bin/xcode-6.2-extractor.sh
+        $ virtualbox/tools/darwin.amd64/bin/xcode-6.2-extractor.sh
 
 1. Build FDP and VirtualBox:
 
-        FDP$ make virtualbox
+        $ make virtualbox
 
     Building takes around 15 minutes; once finished, the VirtualBox application will be at `out-latest/VirtualBox/VirtualBox.app`.
